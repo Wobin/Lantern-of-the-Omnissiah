@@ -6,17 +6,6 @@ Version: 1.0
 Repository: https://github.com/Wobin/Lantern-of-the-Omnissiah
 --]]
 
--- Top-level orchestration only. Concerns are split across modules under
--- scripts/mods/Lantern of the Omnissiah/modules/.
---
--- The slug → talent_id cache is PRE-BUILT offline via
---   tools/build_slug_cache.ps1
--- and shipped as slug_cache.lua at the mod root. The runtime never crawls
--- /abilities/<slug> pages or runs elimination — it just reads the cache,
--- learns any inline pairs available for free from the build page itself, and
--- skips slugs the cache doesn't know about (validator drops orphan children).
--- Re-run the build script when Fatshark patches talents.
-
 local mod = get_mod("Lantern of the Omnissiah")
 mod.version = "1.0"
 
@@ -37,14 +26,47 @@ local Fetch     = mod._modules.fetch
 local Parser    = mod._modules.parser
 local Pipeline  = mod._modules.pipeline
 
-local _pending          = nil   -- { url, started_t, force, mode }
-local _last_handled_url = nil   -- session memoisation (only set on the new-preset path)
+local _pending          = nil
 
 local FETCH_TIMEOUT_SEC = 30
+local POLL_INTERVAL_SEC = 0.1
+
+local HTML_CACHE_MAX = 16
+local _html_cache = mod:persistent_table("html_cache", { entries = {}, order = {} })
+
+local function _cache_touch(url)
+	for i = #_html_cache.order, 1, -1 do
+		if _html_cache.order[i] == url then
+			table.remove(_html_cache.order, i)
+			break
+		end
+	end
+	_html_cache.order[#_html_cache.order + 1] = url
+end
+
+local function cache_get(url)
+	if not _html_cache.entries[url] then return nil end
+	_cache_touch(url)
+	return _html_cache.entries[url]
+end
+
+local function cache_put(url, html)
+	if _html_cache.entries[url] then
+		_cache_touch(url)
+		_html_cache.entries[url] = html
+		return
+	end
+	while #_html_cache.order >= HTML_CACHE_MAX do
+		local oldest = table.remove(_html_cache.order, 1)
+		_html_cache.entries[oldest] = nil
+	end
+	_html_cache.entries[url] = html
+	_html_cache.order[#_html_cache.order + 1] = url
+end
 
 local function on_build_html_ready(html, url, mode)
 	if not html or #html == 0 then
-		mod:notify("Lantern: empty response from gameslantern")
+		mod:notify(mod:localize("loc_lantern_toast_empty_response"))
 		return
 	end
 
@@ -54,22 +76,21 @@ local function on_build_html_ready(html, url, mode)
 	mod:info("[parse] title=%s slug=%s active_anchors=%d", tostring(title), tostring(archetype_slug), #anchors)
 
 	if not archetype_slug or #anchors == 0 then
-		mod._modules.popups.error("Lantern of the Omnissiah",
-			"Could not read any selected talents from that gameslantern page.")
+		mod._modules.popups.error(
+			mod:localize("mod_name"),
+			mod:localize("loc_lantern_err_no_talents_body"))
 		return
 	end
 
-	-- Resolve slug → talent_id from: 1) inline icon pairs in the build page,
-	-- 2) the shipped cache. Anything not resolved is skipped. The cache also
-	-- absorbs the inline pairs so the file grows on its own from real-world
-	-- builds even without re-running the offline crawler.
+	cache_put(url, html)
+
 	local slug_to_talent = {}
 	local cache = SlugCache.get()
 	local cache_changed = false
 	for _, a in ipairs(anchors) do
 		if a.talent_id then
 			slug_to_talent[a.slug] = a.talent_id
-			if cache[a.slug] ~= a.talent_id then
+			if not cache[a.slug] then
 				cache[a.slug] = a.talent_id
 				cache_changed = true
 			end
@@ -80,18 +101,6 @@ local function on_build_html_ready(html, url, mode)
 	end
 	if cache_changed then SlugCache.save() end
 
-	local unresolved = 0
-	for _, a in ipairs(anchors) do
-		if not slug_to_talent[a.slug] then
-			unresolved = unresolved + 1
-			mod:info("[unresolved] %s — not in cache; will be skipped", a.slug)
-		end
-	end
-	if unresolved > 0 then
-		mod:info("[parse] %d/%d slugs unresolved (re-run tools/build_slug_cache.ps1 to extend the cache)",
-			unresolved, #anchors)
-	end
-
 	Pipeline.apply_build({
 		title           = title,
 		archetype_slug  = archetype_slug,
@@ -99,70 +108,107 @@ local function on_build_html_ready(html, url, mode)
 		slug_to_talent  = slug_to_talent,
 		mode            = mode,
 		url             = url,
-		on_handled      = function(handled_url) _last_handled_url = handled_url end,
 	})
 end
 
-mod.run_import = function(force, mode)
-	mode = mode or "new_preset"
-	if _pending then
-		mod:info("[run_import] fetch already in progress; ignoring")
-		return
-	end
+mod.run_import = function(mode, opts)
+	opts = opts or {}
 	local raw = Clipboard.read()
 	local url = Clipboard.extract_gameslantern_url(raw)
 	if not url then
-		if force then mod:notify("Lantern: no gameslantern URL on the clipboard") end
-		return
+		if opts.notify_when_empty then
+			mod:notify(mod:localize("loc_lantern_toast_no_url"))
+		end
+		return false
 	end
-	if not force and url == _last_handled_url then
-		mod:info("[run_import] same URL already handled; skipping (force=false)")
-		return
+	if _pending and _pending.url == url then
+		mod:info("[run_import] same URL already in flight; dedup")
+		return false
+	end
+	local cached = cache_get(url)
+	if cached then
+		if _pending then
+			mod:info("[run_import] URL changed; orphaning previous fetch seq=%d", _pending.seq)
+		end
+		mod:info("[run_import] cache hit for %s", url)
+		_pending = {
+			url         = url,
+			mode        = mode,
+			started_t   = os.clock(),
+			cached_html = cached,
+		}
+		return true
+	end
+	local fetch = Fetch.spawn_build(url)
+	if not fetch then return false end
+	if _pending then
+		mod:info("[run_import] URL changed; orphaning previous fetch seq=%d", _pending.seq)
 	end
 	_pending = {
 		url       = url,
-		started_t = os.clock(),
-		force     = force,
 		mode      = mode,
+		started_t = os.clock(),
+		html_path = fetch.html_path,
+		done_path = fetch.done_path,
+		bat_path  = fetch.bat_path,
+		seq       = fetch.seq,
 	}
-	Fetch.spawn_build(url)
+	return true
 end
 
 mod.update = function(dt)
 	if not _pending then return end
-
-	local f = Mods.lua.io.open(Fetch.BUILD_DONE, "rb")
-	if f then
-		f:close()
-		local url, mode = _pending.url, _pending.mode
+	if _pending.cached_html then
+		local p = _pending
 		_pending = nil
-		local html = Fetch.read_file(Fetch.BUILD_HTML)
-		Fetch.safe_remove(Fetch.BUILD_HTML)
-		Fetch.safe_remove(Fetch.BUILD_DONE)
-		on_build_html_ready(html, url, mode)
+		on_build_html_ready(p.cached_html, p.url, p.mode)
 		return
 	end
-
-	if os.clock() - _pending.started_t > FETCH_TIMEOUT_SEC then
+	local now = os.clock()
+	if now - _pending.started_t > FETCH_TIMEOUT_SEC then
+		local p = _pending
 		_pending = nil
-		mod:warning("[fetch] timed out")
-		mod:notify("Lantern: fetch timed out — check your internet connection")
+		mod:warning("[fetch] timed out seq=%d", p.seq)
+		mod:notify(mod:localize("loc_lantern_toast_fetch_timeout"))
+		Fetch.safe_remove(p.html_path)
+		Fetch.safe_remove(p.done_path)
+		Fetch.safe_remove(p.bat_path)
+		return
+	end
+	if (_pending.last_poll_t or 0) + POLL_INTERVAL_SEC > now then return end
+	_pending.last_poll_t = now
+
+	local f = Mods.lua.io.open(_pending.done_path, "rb")
+	if f then
+		f:close()
+		local p = _pending
+		_pending = nil
+		local html = Fetch.read_file(p.html_path)
+		Fetch.safe_remove(p.html_path)
+		Fetch.safe_remove(p.done_path)
+		Fetch.safe_remove(p.bat_path)
+		on_build_html_ready(html, p.url, p.mode)
 	end
 end
 
 mod.on_all_mods_loaded = function()
 	mod:info(mod.version)
 
+	mod:add_global_localize_strings({
+		loc_lantern_recheck_clipboard = {
+			en = "Re-check Clipboard for GamesLantern link",
+		},
+	})
+
 	mod:command("lantern", "Apply a gameslantern build URL (overwrites current preset)", function()
-		mod.run_import(true, "overwrite_current")
+		mod.run_import("overwrite_current", { notify_when_empty = true })
 	end)
 
-	mod:hook(CLASS.TalentBuilderView, "on_enter", function(orig, self, ...)
-		local ret = orig(self, ...)
-		if not self._is_readonly then
-			mod.run_import(false, "new_preset")
+	mod:hook(CLASS.ViewElementProfilePresets, "cb_add_new_profile_preset", function(orig, self, ...)
+		if mod.run_import("new_preset") then
+			return
 		end
-		return ret
+		return orig(self, ...)
 	end)
 
 	mod:hook(CLASS.InventoryBackgroundView, "_setup_input_legend", function(orig, self, ...)
@@ -170,7 +216,7 @@ mod.on_all_mods_loaded = function()
 		local legend = self._input_legend_element
 		if legend and type(legend.add_entry) == "function" then
 			legend:add_entry(
-				mod:localize("loc_lantern_recheck_clipboard"),
+				"loc_lantern_recheck_clipboard",
 				"hotkey_menu_special_2",
 				function(parent)
 					if parent._is_readonly then return false end
@@ -178,7 +224,7 @@ mod.on_all_mods_loaded = function()
 					return av == "talent_builder_view" or av == "broker_stimm_builder_view"
 				end,
 				function(_id, _pressed)
-					mod.run_import(true, "overwrite_current")
+					mod.run_import("overwrite_current", { notify_when_empty = true })
 				end,
 				"right_alignment"
 			)

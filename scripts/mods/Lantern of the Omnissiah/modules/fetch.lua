@@ -1,28 +1,9 @@
--- Detached HTTP fetch driver using curl.exe.
---
--- Only fetches the build page. Slug → talent_id lookups are pre-built offline
--- via tools/build_slug_cache.ps1; the runtime never crawls /abilities/<slug>
--- pages or runs elimination. If a slug isn't in the shipped cache the mod
--- skips it and the validator drops orphan children.
---
--- Why curl, not PowerShell:
---   * curl.exe ships in C:\Windows\System32 on Windows 10 1803+ (April 2018).
---   * Cold-start ~5-20ms vs PowerShell's ~150-500ms — no visible UI hitch.
---   * Also present in Wine/Proton.
---
--- Why a .bat helper instead of inline cmd /c "...": writing a tiny .bat to
--- %TEMP% lets cmd handle path quoting via %~1 / %~2 naturally instead of
--- escape-gymnastics in nested double-quoted command strings.
-
 local mod = get_mod("Lantern of the Omnissiah")
 
 local M = {}
 
-M.TEMP_DIR     = os.getenv("TEMP") or os.getenv("TMP") or "."
-M.BUILD_HTML   = M.TEMP_DIR .. "\\lantern_of_the_omnissiah.html"
-M.BUILD_DONE   = M.TEMP_DIR .. "\\lantern_of_the_omnissiah.done"
-
-local BUILD_BAT = M.TEMP_DIR .. "\\lantern_fetch_build.bat"
+local TEMP_DIR = os.getenv("TEMP") or os.getenv("TMP") or "."
+local _seq     = 0
 
 function M.safe_remove(path)
 	pcall(os.remove, path)
@@ -48,25 +29,33 @@ local function write_script(path, lines)
 end
 
 local function detach_run(script_path)
-	-- `start "" /B "<bat>"`: empty title, no new window, detached.
 	local cmd = string.format('cmd /c start "" /B "%s"', script_path)
 	local handle = Mods.lua.io.popen(cmd)
 	if handle then handle:close() end
 end
 
 function M.spawn_build(url)
-	M.safe_remove(M.BUILD_HTML)
-	M.safe_remove(M.BUILD_DONE)
-	if not write_script(BUILD_BAT, {
+	_seq = _seq + 1
+	local seq = _seq
+	local html_path = string.format("%s\\lantern_html_%d.html", TEMP_DIR, seq)
+	local done_path = string.format("%s\\lantern_done_%d.done", TEMP_DIR, seq)
+	local bat_path  = string.format("%s\\lantern_bat_%d.bat",  TEMP_DIR, seq)
+	if not write_script(bat_path, {
 		"@echo off",
-		string.format('curl -s -L -o "%s" "%s"', M.BUILD_HTML, url),
-		string.format('type nul > "%s"', M.BUILD_DONE),
+		string.format('curl -s -L --compressed -o "%s" "%s"', html_path, url),
+		string.format('type nul > "%s"', done_path),
 	}) then
-		mod:warning("[fetch] failed to write build script %s", BUILD_BAT)
-		return
+		mod:warning("[fetch] failed to write build script %s", bat_path)
+		return nil
 	end
-	mod:info("[fetch] spawning %s", url)
-	detach_run(BUILD_BAT)
+	mod:info("[fetch] spawning seq=%d %s", seq, url)
+	detach_run(bat_path)
+	return {
+		html_path = html_path,
+		done_path = done_path,
+		bat_path  = bat_path,
+		seq       = seq,
+	}
 end
 
 return M

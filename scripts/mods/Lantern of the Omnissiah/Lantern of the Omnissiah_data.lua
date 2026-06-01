@@ -6,6 +6,21 @@ return {
 	is_togglable = true,
 
 	options = {
-		widgets = {},
+		widgets = {
+			{
+				setting_id    = "skip_confirm",
+				type          = "checkbox",
+				default_value = false,
+				title         = "loc_setting_skip_confirm",
+				tooltip       = "loc_setting_skip_confirm_tooltip",
+			},
+			{
+				setting_id    = "debug",
+				type          = "checkbox",
+				default_value = false,
+				title         = "loc_setting_debug",
+				tooltip       = "loc_setting_debug_tooltip",
+			},
+		},
 	},
 }

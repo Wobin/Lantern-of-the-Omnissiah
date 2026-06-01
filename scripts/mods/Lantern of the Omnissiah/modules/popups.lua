@@ -1,5 +1,4 @@
--- UI popup wrappers — title/body strings passed through unlocalised so we
--- can interpolate runtime data (build title, talent counts, etc).
+local mod = get_mod("Lantern of the Omnissiah")
 
 local M = {}
 
@@ -23,7 +22,7 @@ function M.confirm(title, body, on_confirm)
 			{
 				close_on_pressed = true,
 				no_localization  = true,
-				text             = "Create Preset",
+				text             = mod:localize("loc_lantern_button_create_preset"),
 				callback         = on_confirm,
 			},
 			{
