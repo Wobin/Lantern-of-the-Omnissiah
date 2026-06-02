@@ -1,13 +1,13 @@
 --[[
 Name: Lantern of the Omnissiah
 Author: Wobin
-Date: 01/06/2026
-Version: 1.0
+Date: 02/06/2026
+Version: 1.1
 Repository: https://github.com/Wobin/Lantern-of-the-Omnissiah
 --]]
 
 local mod = get_mod("Lantern of the Omnissiah")
-mod.version = "1.0"
+mod.version = "1.1"
 
 local MODULES = "Lantern of the Omnissiah/scripts/mods/Lantern of the Omnissiah/modules/"
 mod._modules = {
@@ -31,6 +31,8 @@ local _pending          = nil
 local FETCH_TIMEOUT_SEC = 30
 local POLL_INTERVAL_SEC = 0.1
 
+mod.is_fetch_in_flight = function() return _pending ~= nil end
+
 local HTML_CACHE_MAX = 16
 local _html_cache = mod:persistent_table("html_cache", { entries = {}, order = {} })
 
@@ -45,9 +47,19 @@ local function _cache_touch(url)
 end
 
 local function cache_get(url)
-	if not _html_cache.entries[url] then return nil end
+	local html = _html_cache.entries[url]
+	if not html then return nil end
+	local uuid = url:match("/builds/([0-9a-fA-F%-]+)$")
+	if uuid and not html:find(uuid, 1, true) then
+		_html_cache.entries[url] = nil
+		for i = #_html_cache.order, 1, -1 do
+			if _html_cache.order[i] == url then table.remove(_html_cache.order, i); break end
+		end
+		mod:warning("[cache] discarding poisoned entry for %s (UUID not in cached HTML)", url)
+		return nil
+	end
 	_cache_touch(url)
-	return _html_cache.entries[url]
+	return html
 end
 
 local function cache_put(url, html)
@@ -153,6 +165,7 @@ mod.run_import = function(mode, opts)
 		bat_path  = fetch.bat_path,
 		seq       = fetch.seq,
 	}
+	mod:notify(mod:localize("loc_lantern_toast_fetching"))
 	return true
 end
 
@@ -194,6 +207,8 @@ end
 mod.on_all_mods_loaded = function()
 	mod:info(mod.version)
 
+	Fetch.sweep_orphans()
+
 	mod:add_global_localize_strings({
 		loc_lantern_recheck_clipboard = {
 			en = "Re-check Clipboard for GamesLantern link",
@@ -209,6 +224,11 @@ mod.on_all_mods_loaded = function()
 			return
 		end
 		return orig(self, ...)
+	end)
+
+	mod:hook(CLASS.ViewElementProfilePresets, "can_add_profile_preset", function(orig, self)
+		if mod.is_fetch_in_flight() then return false end
+		return orig(self)
 	end)
 
 	mod:hook(CLASS.InventoryBackgroundView, "_setup_input_legend", function(orig, self, ...)

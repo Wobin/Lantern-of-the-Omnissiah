@@ -40,6 +40,8 @@ function M.spawn_build(url)
 	local html_path = string.format("%s\\lantern_html_%d.html", TEMP_DIR, seq)
 	local done_path = string.format("%s\\lantern_done_%d.done", TEMP_DIR, seq)
 	local bat_path  = string.format("%s\\lantern_bat_%d.bat",  TEMP_DIR, seq)
+	M.safe_remove(html_path)
+	M.safe_remove(done_path)
 	if not write_script(bat_path, {
 		"@echo off",
 		string.format('curl -s -L --compressed -o "%s" "%s"', html_path, url),
@@ -56,6 +58,11 @@ function M.spawn_build(url)
 		bat_path  = bat_path,
 		seq       = seq,
 	}
+end
+
+function M.sweep_orphans()
+	local h = Mods.lua.io.popen(string.format('cmd /c del /Q "%s\\lantern_html_*.html" "%s\\lantern_done_*.done" "%s\\lantern_bat_*.bat" 2>nul', TEMP_DIR, TEMP_DIR, TEMP_DIR))
+	if h then h:close() end
 end
 
 return M

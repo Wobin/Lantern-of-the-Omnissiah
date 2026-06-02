@@ -60,6 +60,10 @@ return {
 		en = "When enabled, the mod logs the per-anchor slug resolution and unresolved-slug list to the mod log. Useful when diagnosing imports that didn't apply cleanly.",
 	},
 
+	loc_lantern_toast_fetching = {
+		en = "Lantern: receiving transmission from GamesLantern…",
+	},
+
 	loc_lantern_toast_no_url = {
 		en = "Lantern: no gameslantern URL on the clipboard",
 	},
