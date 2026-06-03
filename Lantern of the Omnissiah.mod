@@ -8,6 +8,6 @@ return {
 			mod_localization = "Lantern of the Omnissiah/scripts/mods/Lantern of the Omnissiah/Lantern of the Omnissiah_localization",
 		})
 	end,
-	version = "1.2",
+	version = "1.3",
 	packages = {},
 }

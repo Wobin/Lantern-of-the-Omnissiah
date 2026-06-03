@@ -1,30 +1,38 @@
 --[[
 Name: Lantern of the Omnissiah
 Author: Wobin
-Date: 03/06/2026
-Version: 1.2
+Date: 04/06/2026
+Version: 1.3
 Repository: https://github.com/Wobin/Lantern-of-the-Omnissiah
 --]]
 
 local mod = get_mod("Lantern of the Omnissiah")
-mod.version = "1.2"
+mod.version = "1.3"
+
+mod.dbg = function(fmt, ...)
+	if mod:get("debug") then mod:info(fmt, ...) end
+end
 
 local MODULES = "Lantern of the Omnissiah/scripts/mods/Lantern of the Omnissiah/modules/"
 mod._modules = {
-	clipboard  = mod:io_dofile(MODULES .. "clipboard"),
-	slug_cache = mod:io_dofile(MODULES .. "slug_cache"),
-	fetch      = mod:io_dofile(MODULES .. "fetch"),
-	parser     = mod:io_dofile(MODULES .. "parser"),
-	layout     = mod:io_dofile(MODULES .. "layout"),
-	popups     = mod:io_dofile(MODULES .. "popups"),
-	preset     = mod:io_dofile(MODULES .. "preset"),
-	pipeline   = mod:io_dofile(MODULES .. "pipeline"),
+	clipboard         = mod:io_dofile(MODULES .. "clipboard"),
+	slug_cache        = mod:io_dofile(MODULES .. "slug_cache"),
+	fetch             = mod:io_dofile(MODULES .. "fetch"),
+	parser            = mod:io_dofile(MODULES .. "parser"),
+	equipment_parser  = mod:io_dofile(MODULES .. "equipment_parser"),
+	equipment_store   = mod:io_dofile(MODULES .. "equipment_store"),
+	equipment_overlay = mod:io_dofile(MODULES .. "equipment_overlay"),
+	layout            = mod:io_dofile(MODULES .. "layout"),
+	popups            = mod:io_dofile(MODULES .. "popups"),
+	preset            = mod:io_dofile(MODULES .. "preset"),
+	pipeline          = mod:io_dofile(MODULES .. "pipeline"),
 }
-local Clipboard = mod._modules.clipboard
-local SlugCache = mod._modules.slug_cache
-local Fetch     = mod._modules.fetch
-local Parser    = mod._modules.parser
-local Pipeline  = mod._modules.pipeline
+local Clipboard        = mod._modules.clipboard
+local SlugCache        = mod._modules.slug_cache
+local Fetch            = mod._modules.fetch
+local Parser           = mod._modules.parser
+local EquipmentParser  = mod._modules.equipment_parser
+local Pipeline         = mod._modules.pipeline
 
 local _pending          = nil
 
@@ -85,7 +93,7 @@ local function on_build_html_ready(html, url, mode)
 	local title          = Parser.parse_title(html)
 	local archetype_slug = Parser.parse_archetype_slug(html)
 	local anchors        = Parser.parse_active_anchors(html)
-	mod:info("[parse] title=%s slug=%s active_anchors=%d", tostring(title), tostring(archetype_slug), #anchors)
+	mod.dbg("[parse] title=%s slug=%s active_anchors=%d", tostring(title), tostring(archetype_slug), #anchors)
 
 	if not archetype_slug or #anchors == 0 then
 		mod._modules.popups.error(
@@ -95,6 +103,12 @@ local function on_build_html_ready(html, url, mode)
 	end
 
 	cache_put(url, html)
+
+	local equipment = EquipmentParser.parse(html)
+	local total_stats = 0
+	for _, w in ipairs(equipment.weapons or {}) do total_stats = total_stats + #(w.stats or {}) end
+	mod.dbg("[equipment] parsed weapons=%d, curios=%d, weapon_stats=%d",
+		#(equipment.weapons or {}), #(equipment.curios or {}), total_stats)
 
 	local slug_to_talent = {}
 	local cache = SlugCache.get()
@@ -120,6 +134,7 @@ local function on_build_html_ready(html, url, mode)
 		slug_to_talent  = slug_to_talent,
 		mode            = mode,
 		url             = url,
+		equipment       = equipment,
 	})
 end
 
@@ -134,15 +149,15 @@ mod.run_import = function(mode, opts)
 		return false
 	end
 	if _pending and _pending.url == url then
-		mod:info("[run_import] same URL already in flight; dedup")
+		mod.dbg("[run_import] same URL already in flight; dedup")
 		return false
 	end
 	local cached = cache_get(url)
 	if cached then
 		if _pending then
-			mod:info("[run_import] URL changed; orphaning previous fetch seq=%d", _pending.seq)
+			mod.dbg("[run_import] URL changed; orphaning previous fetch seq=%d", _pending.seq)
 		end
-		mod:info("[run_import] cache hit for %s", url)
+		mod.dbg("[run_import] cache hit for %s", url)
 		_pending = {
 			url         = url,
 			mode        = mode,
@@ -154,7 +169,7 @@ mod.run_import = function(mode, opts)
 	local fetch = Fetch.spawn_build(url)
 	if not fetch then return false end
 	if _pending then
-		mod:info("[run_import] URL changed; orphaning previous fetch seq=%d", _pending.seq)
+		mod.dbg("[run_import] URL changed; orphaning previous fetch seq=%d", _pending.seq)
 	end
 	_pending = {
 		url       = url,
@@ -223,6 +238,27 @@ mod.on_all_mods_loaded = function()
 		mod.run_import("overwrite_current", { notify_when_empty = true })
 	end)
 
+	mod:command("lantern_show_equipment", "Print the active preset's stored gameslantern equipment recommendation", function()
+		local ProfileUtils = require("scripts/utilities/profile_utils")
+		local active_id = ProfileUtils.get_active_profile_preset_id()
+		if not active_id then mod:echo("no active preset"); return end
+		local eq = mod._modules.equipment_store.get(active_id)
+		if not eq then mod:echo("preset %s has no stored equipment", tostring(active_id)); return end
+		mod:echo("=== preset %s equipment ===", tostring(active_id))
+		for i, w in ipairs(eq.weapons or {}) do
+			mod:echo("  weapon %d: %s (%s)", i, tostring(w.name), tostring(w.rarity))
+			for _, b in ipairs(w.blessings or {}) do
+				mod:echo("    blessing trait_%s: %s", tostring(b.trait_id), tostring(b.name))
+			end
+		end
+		for i, c in ipairs(eq.curios or {}) do
+			mod:echo("  curio %d: %s — %s", i, tostring(c.name), tostring(c.primary))
+			for _, m in ipairs(c.secondary or {}) do
+				mod:echo("    %s", m)
+			end
+		end
+	end)
+
 	mod:hook(CLASS.ViewElementProfilePresets, "cb_add_new_profile_preset", function(orig, self, ...)
 		if mod.run_import("new_preset") then
 			return
@@ -230,9 +266,33 @@ mod.on_all_mods_loaded = function()
 		return orig(self, ...)
 	end)
 
+	mod:hook(CLASS.InventoryView, "_setup_individual_layout", function(orig, self, layout)
+		local ret = orig(self, layout)
+		mod._modules.equipment_overlay.install(self)
+		return ret
+	end)
+	mod:hook(CLASS.InventoryView, "_draw_loadout_widgets", function(orig, self, dt, t, input_service, ui_renderer)
+		orig(self, dt, t, input_service, ui_renderer)
+		mod._modules.equipment_overlay.draw(self, dt, t, input_service, ui_renderer)
+	end)
+	mod:hook(CLASS.InventoryView, "on_exit", function(orig, self, ...)
+		mod._modules.equipment_overlay.teardown(self)
+		return orig(self, ...)
+	end)
+
 	mod:hook(CLASS.ViewElementProfilePresets, "can_add_profile_preset", function(orig, self)
 		if mod.is_fetch_in_flight() then return false end
 		return orig(self)
+	end)
+
+	mod:hook(CLASS.ViewElementProfilePresets, "_remove_profile_preset", function(orig, self, widget, element)
+		local idx = self._active_customize_preset_index
+		local preset_id = idx and self:_get_profile_preset_id_by_widget_index(idx)
+		local ret = orig(self, widget, element)
+		if preset_id and mod._modules.equipment_store then
+			mod._modules.equipment_store.clear(preset_id)
+		end
+		return ret
 	end)
 
 	mod:hook(CLASS.InventoryBackgroundView, "_setup_input_legend", function(orig, self, ...)

@@ -57,7 +57,7 @@ return {
 		en = "Verbose logging",
 	},
 	loc_setting_debug_tooltip = {
-		en = "When enabled, the mod logs the per-anchor slug resolution and unresolved-slug list to the mod log. Useful when diagnosing imports that didn't apply cleanly.",
+		en = "When enabled, logs the pipeline process",
 	},
 
 	loc_lantern_toast_fetching = {

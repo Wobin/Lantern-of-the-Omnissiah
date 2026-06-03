@@ -49,18 +49,17 @@ function M.apply_build(ctx)
 	local spec_budget = profile.expertise_points or 0
 	local budgets = { base_budget, spec_budget }
 
-	local debug = mod:get("debug")
 	local applied, unresolved_slug, unknown_talent, over_budget = 0, 0, 0, 0
 	for _, a in ipairs(ctx.anchors) do
 		local talent_id = ctx.slug_to_talent[a.slug]
 		if not talent_id then
 			unresolved_slug = unresolved_slug + 1
-			if debug then mod:info("[apply] no talent_id for slug %s", a.slug) end
+			mod.dbg("[apply] no talent_id for slug %s", a.slug)
 		else
 			local info = lookup[talent_id]
 			if not info then
 				unknown_talent = unknown_talent + 1
-				if debug then mod:info("[apply] no layout node for talent %s (slug=%s)", talent_id, a.slug) end
+				mod.dbg("[apply] no layout node for talent %s (slug=%s)", talent_id, a.slug)
 			else
 				local idx = info.layout_index
 				if cost_per_layout[idx] + info.cost <= budgets[idx] then
@@ -69,12 +68,12 @@ function M.apply_build(ctx)
 					applied = applied + 1
 				else
 					over_budget = over_budget + 1
-					if debug then mod:info("[apply] over budget, skipping talent %s (slug=%s)", talent_id, a.slug) end
+					mod.dbg("[apply] over budget, skipping talent %s (slug=%s)", talent_id, a.slug)
 				end
 			end
 		end
 	end
-	mod:info("[apply] resolved=%d unresolved_slug=%d unknown_talent=%d over_budget=%d cost={base=%d,spec=%d}",
+	mod.dbg("[apply] resolved=%d unresolved_slug=%d unknown_talent=%d over_budget=%d cost={base=%d,spec=%d}",
 		applied, unresolved_slug, unknown_talent, over_budget,
 		cost_per_layout[1], cost_per_layout[2])
 
@@ -88,7 +87,7 @@ function M.apply_build(ctx)
 	end
 	applied = after
 	local skipped = #ctx.anchors - applied
-	mod:info("[apply] FINAL applied=%d skipped=%d", applied, skipped)
+	mod.dbg("[apply] FINAL applied=%d skipped=%d", applied, skipped)
 
 	if applied == 0 then
 		Popups.error(mod:localize("mod_name"), mod:localize("loc_lantern_err_no_resolved_body"))
@@ -142,13 +141,13 @@ function M.apply_build(ctx)
 
 	local on_confirm = function()
 		if effective_mode == "overwrite_current" then
-			local id = Preset.overwrite_active_with_talents(node_tiers, talents_version, preset_name)
+			local id = Preset.overwrite_active_with_talents(node_tiers, talents_version, preset_name, ctx.equipment)
 			mod:notify(mod:localize("loc_lantern_toast_overwrote", display_title, applied, skipped))
-			mod:info("[import] overwrote preset %s with %d talents", tostring(id), applied)
+			mod.dbg("[import] overwrote preset %s with %d talents", tostring(id), applied)
 		else
-			local new_id = Preset.create_with_talents(node_tiers, talents_version, preset_name)
+			local new_id = Preset.create_with_talents(node_tiers, talents_version, preset_name, ctx.equipment)
 			mod:notify(mod:localize("loc_lantern_toast_imported", display_title, applied, skipped))
-			mod:info("[import] created preset %s with %d talents", tostring(new_id), applied)
+			mod.dbg("[import] created preset %s with %d talents", tostring(new_id), applied)
 		end
 	end
 

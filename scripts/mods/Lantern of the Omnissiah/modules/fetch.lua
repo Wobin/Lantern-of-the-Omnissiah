@@ -50,7 +50,7 @@ function M.spawn_build(url)
 		mod:warning("[fetch] failed to write build script %s", bat_path)
 		return nil
 	end
-	mod:info("[fetch] spawning seq=%d %s", seq, url)
+	mod.dbg("[fetch] spawning seq=%d %s", seq, url)
 	detach_run(bat_path)
 	return {
 		html_path = html_path,

@@ -107,7 +107,7 @@ function M.save()
 	end
 	f:write(table.concat(lines, "\n"))
 	f:close()
-	mod:info("[slug_cache] saved %d entries to %s", #keys, path)
+	mod.dbg("[slug_cache] saved %d entries to %s", #keys, path)
 end
 
 return M
