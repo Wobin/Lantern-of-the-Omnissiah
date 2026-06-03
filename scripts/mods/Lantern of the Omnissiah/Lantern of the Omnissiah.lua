@@ -1,13 +1,13 @@
 --[[
 Name: Lantern of the Omnissiah
 Author: Wobin
-Date: 02/06/2026
-Version: 1.1
+Date: 03/06/2026
+Version: 1.2
 Repository: https://github.com/Wobin/Lantern-of-the-Omnissiah
 --]]
 
 local mod = get_mod("Lantern of the Omnissiah")
-mod.version = "1.1"
+mod.version = "1.2"
 
 local MODULES = "Lantern of the Omnissiah/scripts/mods/Lantern of the Omnissiah/modules/"
 mod._modules = {
@@ -205,7 +205,11 @@ mod.update = function(dt)
 end
 
 mod.on_all_mods_loaded = function()
-	mod:info(mod.version)
+	local meta = SlugCache.get_metadata()
+	local cache = SlugCache.get()
+	local count = 0; for _ in pairs(cache) do count = count + 1 end
+	mod:info("v%s | slug_cache: %d entries (game %s, built %s)",
+		mod.version, count, meta and meta.game_version or "?", meta and meta.cache_built or "?")
 
 	Fetch.sweep_orphans()
 
