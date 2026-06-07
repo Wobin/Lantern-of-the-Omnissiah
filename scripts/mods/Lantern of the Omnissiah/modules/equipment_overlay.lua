@@ -5,6 +5,8 @@ local M = {}
 local UIWidget   = require("scripts/managers/ui/ui_widget")
 local UIRenderer = require("scripts/managers/ui/ui_renderer")
 local ProfileUtils = require("scripts/utilities/profile_utils")
+local Items        = require("scripts/utilities/items")
+local MasterItems  = require("scripts/backend/master_items")
 
 local SLOTS = {
 	"slot_primary",
@@ -101,15 +103,19 @@ local function build_weapon_entry(w)
 	}
 end
 
-local function build_curio_entry(c, idx)
+local function build_curios_stacked_entry(eq)
 	local lines = {}
-	for _, m in ipairs(c.secondary or {}) do
-		lines[#lines + 1] = "● " .. m
+	for idx, c in ipairs(eq.curios or {}) do
+		if idx > 1 then lines[#lines + 1] = "" end
+		lines[#lines + 1] = string.format("Curio %d:  %s", idx, tostring(c.primary or c.name or "?"))
+		for _, m in ipairs(c.secondary or {}) do
+			lines[#lines + 1] = "    ● " .. m
+		end
 	end
 	return {
 		kind            = "curio",
 		header          = HEADER_TEXT,
-		subheader       = string.format("Curio %d:  %s", idx, tostring(c.primary or c.name or "?")),
+		subheader       = "Recommended Curios",
 		rows            = {},
 		secondary_block = table.concat(lines, "\n"),
 	}
@@ -122,9 +128,7 @@ local function build_entry_for_slot(eq, slot_name)
 		local w = find_weapon_for_slot(eq, slot_name)
 		entry = w and build_weapon_entry(w) or nil
 	else
-		local idx = tonumber(slot_name:match("(%d+)$"))
-		local c = idx and eq.curios and eq.curios[idx]
-		entry = c and build_curio_entry(c, idx) or nil
+		entry = (eq.curios and #eq.curios > 0) and build_curios_stacked_entry(eq) or nil
 	end
 	if entry then
 		if eq.title and eq.title ~= "" then
@@ -138,6 +142,72 @@ local function build_entry_for_slot(eq, slot_name)
 		end
 	end
 	return entry
+end
+
+local function name_key(s)
+	local words = {}
+	for w in tostring(s or ""):lower():gmatch("%w+") do
+		words[#words + 1] = w
+	end
+	table.sort(words)
+	return table.concat(words, " ")
+end
+
+local function strip_values(s)
+	if not s then return "" end
+	s = tostring(s):lower():gsub("[%d%%%+%-–%.,]+", " "):gsub("%s+", " ")
+	return (s:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+local function matched_entry_for_item(eq, item)
+	if not eq or not item then return nil end
+	local slot = item.slots and item.slots[1]
+	if not slot then return nil end
+
+	if slot == "slot_primary" or slot == "slot_secondary" then
+		local w = find_weapon_for_slot(eq, slot)
+		if not w then
+			mod.dbg("[refine] no recommended weapon stored for %s", slot)
+			return nil
+		end
+		local item_name = Items.display_name and Items.display_name(item)
+		if not item_name then
+			mod.dbg("[refine] %s: could not resolve crafted item display name", slot)
+			return nil
+		end
+		if name_key(item_name) ~= name_key(w.name) then
+			mod.dbg("[refine] %s mismatch: crafted '%s' vs recommended '%s' (tokens '%s' vs '%s')",
+				slot, item_name, tostring(w.name), name_key(item_name), name_key(w.name))
+			return nil
+		end
+		mod.dbg("[refine] %s match: '%s'", slot, item_name)
+		return build_weapon_entry(w)
+	end
+
+	local parts = {}
+	for _, tr in ipairs(item.traits or {}) do
+		local master = tr.id and MasterItems.get_item(tr.id)
+		if master then
+			local ok, desc = pcall(Items.trait_description, master, tr.rarity, tr.value)
+			if ok and desc then parts[#parts + 1] = desc end
+		end
+	end
+	local blessing = strip_values(table.concat(parts, " "))
+	if blessing == "" then
+		mod.dbg("[refine] %s: no curio blessing text resolved on item", slot)
+		return nil
+	end
+	local rec = {}
+	for idx, c in ipairs(eq.curios or {}) do
+		local stat = strip_values(c.primary)
+		rec[#rec + 1] = stat
+		if stat ~= "" and blessing:find(stat, 1, true) then
+			mod.dbg("[refine] curio match: '%s' in blessing '%s'", stat, blessing)
+			return build_curios_stacked_entry(eq)
+		end
+	end
+	mod.dbg("[refine] curio mismatch: blessing '%s' vs recommended {%s}", blessing, table.concat(rec, ", "))
+	return nil
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -444,6 +514,16 @@ local function ensure_weapon_panel(view)
 	return view._lantern_weapon_panel
 end
 
+local function draw_panel_raised(view, widget, input_service, dt, ui_renderer)
+	local render_settings = view._render_settings
+	local base_layer = render_settings.start_layer or 0
+	render_settings.start_layer = base_layer + 50
+	UIRenderer.begin_pass(ui_renderer, view._ui_scenegraph, input_service, dt, render_settings)
+	UIWidget.draw(widget, ui_renderer)
+	UIRenderer.end_pass(ui_renderer)
+	render_settings.start_layer = base_layer
+end
+
 function M.draw_weapon_select(view, dt, t, input_service, ui_renderer)
 	if not mod:get("show_recommendations") then return end
 	if not ui_renderer then return end
@@ -480,13 +560,74 @@ function M.draw_weapon_select(view, dt, t, input_service, ui_renderer)
 		widget.offset[2] = y
 	end
 
-	local render_settings = view._render_settings
-	local base_layer = render_settings.start_layer or 0
-	render_settings.start_layer = base_layer + 50
-	UIRenderer.begin_pass(ui_renderer, view._ui_scenegraph, input_service, dt, render_settings)
-	UIWidget.draw(widget, ui_renderer)
-	UIRenderer.end_pass(ui_renderer)
-	render_settings.start_layer = base_layer
+	draw_panel_raised(view, widget, input_service, dt, ui_renderer)
+end
+
+function M.draw_crafting(view, dt, t, input_service, ui_renderer)
+	if not mod:get("show_recommendations") then return end
+	if not ui_renderer then return end
+
+	local item = view._previewed_item
+	local slot = item and item.slots and item.slots[1]
+	if not slot then return end
+
+	local state     = ensure_weapon_panel(view)
+	local active_id = ProfileUtils.get_active_profile_preset_id()
+	local sig       = tostring(active_id) .. "|" .. tostring(slot)
+	if state.sig ~= sig then
+		state.sig = sig
+		local store = mod._modules and mod._modules.equipment_store
+		local eq    = store and store.get(active_id)
+		state.entry = eq and build_entry_for_slot(eq, slot) or nil
+		if state.entry then populate_tooltip_content(state.widget, state.entry) end
+	end
+	if not state.entry then return end
+
+	local widget = state.widget
+	local pos = view._scenegraph_world_position and view:_scenegraph_world_position("crafting_recipe_pivot")
+	if pos then
+		local ms = view._crafting_recipe and view._crafting_recipe._menu_settings
+		local frame_h = (ms and ms.grid_size and ms.grid_size[2]) or 650
+		local lift = (state.entry.kind == "curio") and 300 or 0
+		widget.offset[1] = pos[1] + WEAPON_PANEL_GAP
+		widget.offset[2] = pos[2] - frame_h - lift
+	end
+
+	draw_panel_raised(view, widget, input_service, dt, ui_renderer)
+end
+
+function M.draw_refine(view, dt, t, input_service, ui_renderer)
+	if not mod:get("show_recommendations") then return end
+	if not ui_renderer then return end
+
+	local item = view._item
+	if not item then return end
+
+	local state     = ensure_weapon_panel(view)
+	local active_id = ProfileUtils.get_active_profile_preset_id()
+	local sig       = tostring(active_id) .. "|" .. tostring(item.gear_id or item.name)
+	if state.sig ~= sig then
+		state.sig = sig
+		local store = mod._modules and mod._modules.equipment_store
+		local eq    = store and store.get(active_id)
+		state.entry = eq and matched_entry_for_item(eq, item) or nil
+		if state.entry then populate_tooltip_content(state.widget, state.entry) end
+	end
+	if not state.entry then return end
+
+	local widget = state.widget
+	local pos = view._scenegraph_world_position and view:_scenegraph_world_position("crafting_recipe_pivot")
+	if pos then
+		local panel_h = (widget.style.background and widget.style.background.size[2]) or 0
+		local frame_w = (view._ui_scenegraph and view._ui_scenegraph.crafting_recipe_pivot
+			and view._ui_scenegraph.crafting_recipe_pivot.size[1]) or TOOLTIP_WIDTH
+		local y = pos[2] - panel_h - WEAPON_PANEL_GAP - 80
+		if y < 0 then y = 0 end
+		widget.offset[1] = pos[1] + (frame_w - TOOLTIP_WIDTH) * 0.5
+		widget.offset[2] = y
+	end
+
+	draw_panel_raised(view, widget, input_service, dt, ui_renderer)
 end
 
 return M

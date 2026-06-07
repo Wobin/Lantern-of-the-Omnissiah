@@ -2,12 +2,12 @@
 Name: Lantern of the Omnissiah
 Author: Wobin
 Date: 07/06/2026
-Version: 1.4
+Version: 1.5
 Repository: https://github.com/Wobin/Lantern-of-the-Omnissiah
 --]]
 
 local mod = get_mod("Lantern of the Omnissiah")
-mod.version = "1.4"
+mod.version = "1.5"
 
 mod.dbg = function(fmt, ...)
 	if mod:get("debug") then mod:info(fmt, ...) end
@@ -286,6 +286,18 @@ mod.on_all_mods_loaded = function()
 		orig(self, dt, t, input_service, layer)
 		mod._modules.equipment_overlay.draw_weapon_select(self, dt, t, input_service, self._ui_default_renderer)
 	end)
+
+	mod:hook("CraftingMechanicusModifyView", "draw", function(orig, self, dt, t, input_service, layer)
+		orig(self, dt, t, input_service, layer)
+		mod._modules.equipment_overlay.draw_crafting(self, dt, t, input_service, self._ui_default_renderer)
+	end)
+
+	for _, view_name in ipairs({ "CraftingMechanicusReplacePerkView", "CraftingMechanicusReplaceTraitView" }) do
+		mod:hook(view_name, "draw", function(orig, self, dt, t, input_service, layer)
+			orig(self, dt, t, input_service, layer)
+			mod._modules.equipment_overlay.draw_refine(self, dt, t, input_service, self._ui_renderer)
+		end)
+	end
 
 	mod:hook(CLASS.ViewElementProfilePresets, "can_add_profile_preset", function(orig, self)
 		if mod.is_fetch_in_flight() then return false end
