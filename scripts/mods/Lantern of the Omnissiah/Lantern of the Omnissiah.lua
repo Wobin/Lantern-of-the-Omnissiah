@@ -1,13 +1,13 @@
 --[[
 Name: Lantern of the Omnissiah
 Author: Wobin
-Date: 04/06/2026
-Version: 1.3
+Date: 07/06/2026
+Version: 1.4
 Repository: https://github.com/Wobin/Lantern-of-the-Omnissiah
 --]]
 
 local mod = get_mod("Lantern of the Omnissiah")
-mod.version = "1.3"
+mod.version = "1.4"
 
 mod.dbg = function(fmt, ...)
 	if mod:get("debug") then mod:info(fmt, ...) end
@@ -105,6 +105,8 @@ local function on_build_html_ready(html, url, mode)
 	cache_put(url, html)
 
 	local equipment = EquipmentParser.parse(html)
+	equipment.title  = title
+	equipment.author = Parser.parse_author(html)
 	local total_stats = 0
 	for _, w in ipairs(equipment.weapons or {}) do total_stats = total_stats + #(w.stats or {}) end
 	mod.dbg("[equipment] parsed weapons=%d, curios=%d, weapon_stats=%d",
@@ -278,6 +280,11 @@ mod.on_all_mods_loaded = function()
 	mod:hook(CLASS.InventoryView, "on_exit", function(orig, self, ...)
 		mod._modules.equipment_overlay.teardown(self)
 		return orig(self, ...)
+	end)
+
+	mod:hook("InventoryWeaponsView", "draw", function(orig, self, dt, t, input_service, layer)
+		orig(self, dt, t, input_service, layer)
+		mod._modules.equipment_overlay.draw_weapon_select(self, dt, t, input_service, self._ui_default_renderer)
 	end)
 
 	mod:hook(CLASS.ViewElementProfilePresets, "can_add_profile_preset", function(orig, self)

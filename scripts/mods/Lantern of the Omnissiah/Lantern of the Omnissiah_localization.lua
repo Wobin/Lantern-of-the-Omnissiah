@@ -47,6 +47,12 @@ return {
 		en = "None of the talents on that page could be resolved.",
 	},
 
+	loc_setting_show_recommendations = {
+		en = "Show weapon recommendations",
+	},
+	loc_setting_show_recommendations_tooltip = {
+		en = "When enabled, shows the GamesLantern recommended-weapon icons and tooltips on the loadout screen and the recommendation panel on the weapon selection screen. Turn off to hide all recommendation UI.",
+	},
 	loc_setting_skip_confirm = {
 		en = "Skip confirmation popup",
 	},

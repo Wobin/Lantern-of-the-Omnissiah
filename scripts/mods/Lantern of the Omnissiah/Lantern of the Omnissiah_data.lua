@@ -8,6 +8,13 @@ return {
 	options = {
 		widgets = {
 			{
+				setting_id    = "show_recommendations",
+				type          = "checkbox",
+				default_value = true,
+				title         = "loc_setting_show_recommendations",
+				tooltip       = "loc_setting_show_recommendations_tooltip",
+			},
+			{
 				setting_id    = "skip_confirm",
 				type          = "checkbox",
 				default_value = false,

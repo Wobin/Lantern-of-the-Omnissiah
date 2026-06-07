@@ -10,6 +10,17 @@ function M.parse_title(html)
 	end
 end
 
+function M.parse_author(html)
+	for block in html:gmatch('<script[^>]+type="application/ld%+json"[^>]*>%s*(.-)%s*</script>') do
+		local author = block:match('"author".-"name"%s*:%s*"(.-)"')
+			or block:match('"author"%s*:%s*"(.-)"')
+		if author then
+			author = author:gsub('\\/', '/'):gsub('\\"', '"'):gsub('\\\\', '\\')
+			return author
+		end
+	end
+end
+
 function M.parse_archetype_slug(html)
 	for block in html:gmatch('<script[^>]+type="application/ld%+json"[^>]*>%s*(.-)%s*</script>') do
 		if block:find('"BreadcrumbList"', 1, true) then

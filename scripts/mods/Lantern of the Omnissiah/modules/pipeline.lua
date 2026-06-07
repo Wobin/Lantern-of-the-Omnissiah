@@ -119,11 +119,17 @@ function M.apply_build(ctx)
 	else
 		action_line = mod:localize("loc_lantern_confirm_apply_new", applied, #ctx.anchors)
 	end
+	local author     = ctx.equipment and ctx.equipment.author
+	local build_line = ctx.title or "(untitled)"
+	if author and author ~= "" then
+		build_line = build_line .. " by " .. author
+	end
 	local body_lines = {
-		mod:localize("loc_lantern_confirm_build_line", ctx.title or "(untitled)"),
+		mod:localize("loc_lantern_confirm_build_line", build_line),
 		"",
 		action_line,
 	}
+
 	if over_budget > 0 then
 		body_lines[#body_lines + 1] = ""
 		body_lines[#body_lines + 1] = mod:localize("loc_lantern_confirm_warn_underleveled", over_budget, #ctx.anchors)

@@ -23,6 +23,8 @@ local TOOLTIP_MAX_H  = 700
 local TOOLTIP_OFFSET = { 40, 260, 0 }
 local TOOLTIP_PADDING = 14
 local TOOLTIP_Z      = 200
+local WEAPON_PANEL_GAP = 22
+local WEAPON_PANEL_X   = -10
 
 local HEADER_H       = 18
 local HEADER_GAP     = 8
@@ -101,16 +103,13 @@ end
 
 local function build_curio_entry(c, idx)
 	local lines = {}
-	if c.primary and c.primary ~= "" then
-		lines[#lines + 1] = "● " .. c.primary
-	end
 	for _, m in ipairs(c.secondary or {}) do
-		lines[#lines + 1] = "      " .. m
+		lines[#lines + 1] = "● " .. m
 	end
 	return {
 		kind            = "curio",
 		header          = HEADER_TEXT,
-		subheader       = string.format("Curio %d:  %s", idx, tostring(c.name or "?")),
+		subheader       = string.format("Curio %d:  %s", idx, tostring(c.primary or c.name or "?")),
 		rows            = {},
 		secondary_block = table.concat(lines, "\n"),
 	}
@@ -118,13 +117,27 @@ end
 
 local function build_entry_for_slot(eq, slot_name)
 	if not eq then return nil end
+	local entry
 	if slot_name == "slot_primary" or slot_name == "slot_secondary" then
 		local w = find_weapon_for_slot(eq, slot_name)
-		return w and build_weapon_entry(w) or nil
+		entry = w and build_weapon_entry(w) or nil
+	else
+		local idx = tonumber(slot_name:match("(%d+)$"))
+		local c = idx and eq.curios and eq.curios[idx]
+		entry = c and build_curio_entry(c, idx) or nil
 	end
-	local idx = tonumber(slot_name:match("(%d+)$"))
-	local c = idx and eq.curios and eq.curios[idx]
-	return c and build_curio_entry(c, idx) or nil
+	if entry then
+		if eq.title and eq.title ~= "" then
+			if eq.author and eq.author ~= "" then
+				entry.header = eq.title .. " by " .. eq.author
+			else
+				entry.header = eq.title
+			end
+		else
+			entry.header = HEADER_TEXT
+		end
+	end
+	return entry
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -252,7 +265,21 @@ local function layout_tooltip(tooltip, entry)
 		y = y + SUBHEADER_GAP
 	end
 
+	local perks_shown = false
+	local sb = entry.secondary_block
+	if sb and sb ~= "" then
+		local lines  = count_lines(sb)
+		local height = math.max(SECONDARY_LINE_H, lines * SECONDARY_LINE_H)
+		set_pass_xy(s.secondary_block, TOOLTIP_PADDING, y, content_w, height)
+		set_alpha(s.secondary_block, 220)
+		y = y + height
+		perks_shown = true
+	else
+		set_alpha(s.secondary_block, 0)
+	end
+
 	if entry.kind == "weapon" then
+		if perks_shown and entry.rows[1] then y = y + ROW_GAP end
 		for i = 1, 2 do
 			local row = entry.rows[i]
 			local icon_style = s["trait_" .. i]
@@ -283,21 +310,22 @@ local function layout_tooltip(tooltip, entry)
 		end
 	end
 
-	local sb = entry.secondary_block
-	if sb and sb ~= "" then
-		if entry.kind == "weapon" then y = y + ROW_GAP end
-		local lines  = count_lines(sb)
-		local height = math.max(SECONDARY_LINE_H, lines * SECONDARY_LINE_H)
-		set_pass_xy(s.secondary_block, TOOLTIP_PADDING, y, content_w, height)
-		set_alpha(s.secondary_block, 220)
-		y = y + height
-	else
-		set_alpha(s.secondary_block, 0)
-	end
-
 	local total_h = math.min(TOOLTIP_MAX_H, y + TOOLTIP_PADDING)
 	if s.background then s.background.size = { TOOLTIP_WIDTH, total_h } end
 	if s.border_top then s.border_top.size = { TOOLTIP_WIDTH, 2 } end
+end
+
+local function populate_tooltip_content(widget, data)
+	local c = widget.content
+	c.header          = data.header
+	c.subheader       = data.subheader
+	c.dump_stat       = data.dump_stat or ""
+	c.row_1_name      = (data.rows[1] and data.rows[1].name) or ""
+	c.row_1_desc      = (data.rows[1] and data.rows[1].desc) or ""
+	c.row_2_name      = (data.rows[2] and data.rows[2].name) or ""
+	c.row_2_desc      = (data.rows[2] and data.rows[2].desc) or ""
+	c.secondary_block = data.secondary_block or ""
+	layout_tooltip(widget, data)
 end
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -367,6 +395,7 @@ function M.install(inventory_view)
 end
 
 function M.draw(inventory_view, dt, t, input_service, ui_renderer)
+	if not mod:get("show_recommendations") then return end
 	local state = inventory_view._lantern_overlay
 	if not state or not state.icons or #state.icons == 0 then return end
 
@@ -385,17 +414,7 @@ function M.draw(inventory_view, dt, t, input_service, ui_renderer)
 
 	if hovered_entry and hovered_entry.data and state.tooltip then
 		if hovered_entry ~= state._last_hovered then
-			local c    = state.tooltip.content
-			local data = hovered_entry.data
-			c.header           = data.header
-			c.subheader        = data.subheader
-			c.dump_stat        = data.dump_stat or ""
-			c.row_1_name       = (data.rows[1] and data.rows[1].name) or ""
-			c.row_1_desc       = (data.rows[1] and data.rows[1].desc) or ""
-			c.row_2_name       = (data.rows[2] and data.rows[2].name) or ""
-			c.row_2_desc       = (data.rows[2] and data.rows[2].desc) or ""
-			c.secondary_block  = data.secondary_block or ""
-			layout_tooltip(state.tooltip, data)
+			populate_tooltip_content(state.tooltip, hovered_entry.data)
 			state._last_hovered = hovered_entry
 		end
 		UIWidget.draw(state.tooltip, ui_renderer)
@@ -408,6 +427,66 @@ function M.teardown(inventory_view)
 	if inventory_view._lantern_overlay then
 		inventory_view._lantern_overlay = nil
 	end
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Weapon selection screen (InventoryWeaponsView): an always-on panel showing the
+-- recommendation for the slot being edited, anchored under the weapon-action box.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+local function ensure_weapon_panel(view)
+	if view._lantern_weapon_panel then return view._lantern_weapon_panel end
+	local def    = UIWidget.create_definition(tooltip_pass_template(), "screen", nil,
+		{ TOOLTIP_WIDTH, TOOLTIP_MAX_H })
+	local widget = UIWidget.init("lantern_weapon_panel", def)
+	widget.offset = { 0, 0, TOOLTIP_Z }
+	view._lantern_weapon_panel = { widget = widget, sig = nil }
+	return view._lantern_weapon_panel
+end
+
+function M.draw_weapon_select(view, dt, t, input_service, ui_renderer)
+	if not mod:get("show_recommendations") then return end
+	if not ui_renderer then return end
+	if not (view.is_previewing_item and view:is_previewing_item()) then return end
+	if view._discard_items_element or view._item_compare_toggled then return end
+
+	local slot = view._selected_slot
+	if not slot then return end
+
+	local state     = ensure_weapon_panel(view)
+	local active_id = ProfileUtils.get_active_profile_preset_id()
+	local sig       = tostring(active_id) .. "|" .. tostring(slot.name)
+	if state.sig ~= sig then
+		state.sig = sig
+		local store = mod._modules and mod._modules.equipment_store
+		local eq    = store and store.get(active_id)
+		state.entry = eq and build_entry_for_slot(eq, slot.name) or nil
+		if state.entry then populate_tooltip_content(state.widget, state.entry) end
+	end
+	if not state.entry then return end
+
+	local widget = state.widget
+	local pos = view._scenegraph_world_position and view:_scenegraph_world_position("weapon_actions_pivot")
+	if pos then
+		local opts = view._weapon_options_element
+		local buttons_h = (opts and opts._menu_settings and opts._menu_settings.grid_size
+			and opts._menu_settings.grid_size[2]) or 0
+		local panel_h = (widget.style.background and widget.style.background.size[2]) or 0
+		local y = pos[2] + buttons_h + WEAPON_PANEL_GAP
+		local screen_h = (view._ui_scenegraph and view._ui_scenegraph.screen
+			and view._ui_scenegraph.screen.size[2]) or 1080
+		if y + panel_h > screen_h then y = math.max(0, screen_h - panel_h) end
+		widget.offset[1] = pos[1] + WEAPON_PANEL_X
+		widget.offset[2] = y
+	end
+
+	local render_settings = view._render_settings
+	local base_layer = render_settings.start_layer or 0
+	render_settings.start_layer = base_layer + 50
+	UIRenderer.begin_pass(ui_renderer, view._ui_scenegraph, input_service, dt, render_settings)
+	UIWidget.draw(widget, ui_renderer)
+	UIRenderer.end_pass(ui_renderer)
+	render_settings.start_layer = base_layer
 end
 
 return M
