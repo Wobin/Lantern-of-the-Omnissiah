@@ -8,6 +8,7 @@ local PresetsSettings     = require("scripts/ui/view_elements/view_element_profi
 local SLUG_TO_ARCHETYPE = {
 	arbites      = "adamant",
 	["hive-scum"] = "broker",
+	skitarii     = "cryptic",
 }
 
 local M = {}
