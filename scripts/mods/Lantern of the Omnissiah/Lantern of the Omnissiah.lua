@@ -2,12 +2,12 @@
 Name: Lantern of the Omnissiah
 Author: Wobin
 Date: 26/06/2026
-Version: 1.7
+Version: 1.7.1
 Repository: https://github.com/Wobin/Lantern-of-the-Omnissiah
 --]]
 
 local mod = get_mod("Lantern of the Omnissiah")
-mod.version = "1.7"
+mod.version = "1.7.1"
 
 mod.dbg = function(fmt, ...)
 	if mod:get("debug") then mod:info(fmt, ...) end

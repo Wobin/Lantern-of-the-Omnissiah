@@ -71,7 +71,7 @@ local function spawn_build_windows(url)
 	M.safe_remove(err_path)
 	if not write_script(bat_path, {
 		"@echo off",
-		string.format('"%s" -s -S -L --compressed -o "%s" "%s" 2> "%s"', CURL, html_path, url, err_path),
+		string.format('"%s" -s -S -L -o "%s" "%s" 2> "%s"', CURL, html_path, url, err_path),
 		string.format('>"%s" echo %%ERRORLEVEL%%', done_path),
 	}) then
 		mod:warning("[fetch] failed to write build script %s", bat_path)
@@ -109,7 +109,7 @@ local function spawn_build_wine(url)
 	if not write_script(sh_win, {
 		string.format("out='%s'; err='%s'; done='%s'", html_unix, err_unix, done_unix),
 		"if command -v curl >/dev/null 2>&1; then",
-		string.format("  curl -s -S -L --compressed -o \"$out\" '%s' 2> \"$err\"; echo $? > \"$done\"", url),
+		string.format("  curl -s -S -L -o \"$out\" '%s' 2> \"$err\"; echo $? > \"$done\"", url),
 		"elif command -v wget >/dev/null 2>&1; then",
 		string.format("  wget -q -O \"$out\" '%s' 2> \"$err\"; echo $? > \"$done\"", url),
 		"else",
