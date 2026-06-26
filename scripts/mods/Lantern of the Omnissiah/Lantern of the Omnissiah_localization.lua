@@ -82,6 +82,9 @@ return {
 	loc_lantern_toast_empty_response = {
 		en = "Lantern: empty response from gameslantern",
 	},
+	loc_lantern_toast_linux_unsupported = {
+		en = "Lantern: can't fetch under this Proton setup (Z: drive not mapped to /)",
+	},
 	loc_lantern_toast_fetch_timeout = {
 		en = "Lantern: fetch timed out — check your internet connection",
 	},

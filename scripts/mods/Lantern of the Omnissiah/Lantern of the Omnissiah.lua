@@ -1,13 +1,13 @@
 --[[
 Name: Lantern of the Omnissiah
 Author: Wobin
-Date: 23/06/2026
-Version: 1.6
+Date: 26/06/2026
+Version: 1.7
 Repository: https://github.com/Wobin/Lantern-of-the-Omnissiah
 --]]
 
 local mod = get_mod("Lantern of the Omnissiah")
-mod.version = "1.6"
+mod.version = "1.7"
 
 mod.dbg = function(fmt, ...)
 	if mod:get("debug") then mod:info(fmt, ...) end
@@ -35,6 +35,7 @@ local EquipmentParser  = mod._modules.equipment_parser
 local Pipeline         = mod._modules.pipeline
 
 local _pending          = nil
+local _test             = nil
 
 local FETCH_TIMEOUT_SEC = 30
 local POLL_INTERVAL_SEC = 0.1
@@ -168,8 +169,13 @@ mod.run_import = function(mode, opts)
 		}
 		return true
 	end
-	local fetch = Fetch.spawn_build(url)
-	if not fetch then return false end
+	local fetch, reason = Fetch.spawn_build(url)
+	if not fetch then
+		if reason == "linux_unsupported" then
+			mod:notify(mod:localize("loc_lantern_toast_linux_unsupported"))
+		end
+		return false
+	end
 	if _pending then
 		mod.dbg("[run_import] URL changed; orphaning previous fetch seq=%d", _pending.seq)
 	end
@@ -180,13 +186,41 @@ mod.run_import = function(mode, opts)
 		html_path = fetch.html_path,
 		done_path = fetch.done_path,
 		bat_path  = fetch.bat_path,
+		err_path  = fetch.err_path,
 		seq       = fetch.seq,
 	}
 	mod:notify(mod:localize("loc_lantern_toast_fetching"))
 	return true
 end
 
+local function _test_cleanup(h)
+	Fetch.safe_remove(h.html_path)
+	Fetch.safe_remove(h.done_path)
+	Fetch.safe_remove(h.bat_path)
+	Fetch.safe_remove(h.err_path)
+end
+
 mod.update = function(dt)
+	if _test then
+		local h = _test.handle
+		if os.clock() - _test.started_t > FETCH_TIMEOUT_SEC then
+			_test = nil
+			mod:echo("[fetchtest] TIMEOUT after %ds — done file never appeared", FETCH_TIMEOUT_SEC)
+			_test_cleanup(h)
+		else
+			local tf = Mods.lua.io.open(h.done_path, "rb")
+			if tf then
+				tf:close()
+				_test = nil
+				local html = Fetch.read_file(h.html_path)
+				local code, err = Fetch.read_diagnostics(h)
+				mod:echo("[fetchtest] done exit=%s bytes=%s err=%s",
+					tostring(code), tostring(html and #html or 0), tostring(err))
+				_test_cleanup(h)
+			end
+		end
+	end
+
 	if not _pending then return end
 	if _pending.cached_html then
 		local p = _pending
@@ -203,6 +237,7 @@ mod.update = function(dt)
 		Fetch.safe_remove(p.html_path)
 		Fetch.safe_remove(p.done_path)
 		Fetch.safe_remove(p.bat_path)
+		Fetch.safe_remove(p.err_path)
 		return
 	end
 	if (_pending.last_poll_t or 0) + POLL_INTERVAL_SEC > now then return end
@@ -214,9 +249,15 @@ mod.update = function(dt)
 		local p = _pending
 		_pending = nil
 		local html = Fetch.read_file(p.html_path)
+		if not html or #html == 0 then
+			local code, err = Fetch.read_diagnostics(p)
+			mod:warning("[fetch] empty html seq=%d curl_exit=%s stderr=%s",
+				p.seq, tostring(code), tostring(err))
+		end
 		Fetch.safe_remove(p.html_path)
 		Fetch.safe_remove(p.done_path)
 		Fetch.safe_remove(p.bat_path)
+		Fetch.safe_remove(p.err_path)
 		on_build_html_ready(html, p.url, p.mode)
 	end
 end
@@ -238,6 +279,20 @@ mod.on_all_mods_loaded = function()
 
 	mod:command("lantern", "Apply a gameslantern build URL (overwrites current preset)", function()
 		mod.run_import("overwrite_current", { notify_when_empty = true })
+	end)
+
+	mod:command("lantern_fetchtest", "Diagnostic: fetch a build URL via the active transport and report the result", function()
+		local raw = Clipboard.read()
+		local url = Clipboard.extract_gameslantern_url(raw)
+			or "https://darktide.gameslantern.com/builds/a07df7b0-bb70-49fc-972e-237b68db7582"
+		local wine = Application and Application.wine_version and Application.wine_version()
+		local handle, reason = Fetch.spawn_build(url)
+		if not handle then
+			mod:echo("[fetchtest] spawn failed: %s (wine=%s)", tostring(reason), tostring(wine))
+			return
+		end
+		_test = { handle = handle, started_t = os.clock() }
+		mod:echo("[fetchtest] spawned (wine=%s) %s", tostring(wine), url)
 	end)
 
 	mod:command("lantern_show_equipment", "Print the active preset's stored gameslantern equipment recommendation", function()
