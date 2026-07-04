@@ -1,17 +1,51 @@
-name: upload-nexus-mods
+name: Release Lantern of the Omnissiah
 
 on:
   release:
-    types: [ "published" ]
+    types: [ published ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to upload (e.g. 1.8.0)
+        required: true
 
 jobs:
-  fetch-upload:
-    uses: wobin/DarktideModAutoUploader/.github/workflows/pack_mod.yml@v1.4
-    with:
-      nexusmods_mod_id: 882
-      mod_version: ${{ github.event.release.name }}
-      mod_description: ${{ github.event.release.body }}
-      checkout_ref: ${{ github.event.release.tag_name }}
-    secrets:
-      NEXUSMODS_APIKEY: ${{ secrets.NEXUSMODS_APIKEY }}
-      NEXUSMODS_SESSION_COOKIE: ${{ secrets.NEXUSMODS_SESSION_COOKIE }}
+  package-and-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set version
+        run: echo "VERSION=${{ github.event.release.tag_name || inputs.version }}" >> "$GITHUB_ENV"
+
+      - name: Package (committed tree, no git artefacts)
+        run: |
+          git archive --format=zip --prefix="Lantern of the Omnissiah/" \
+            -o "Lantern-${VERSION}.zip" HEAD
+
+      - name: Verify zip contents
+        run: |
+          unzip -l "Lantern-${VERSION}.zip"
+          if unzip -l "Lantern-${VERSION}.zip" | grep -E '\.git|\.github'; then
+            echo "Git artefacts found in zip" && exit 1
+          fi
+          unzip -l "Lantern-${VERSION}.zip" | grep -q "Lantern of the Omnissiah/Lantern of the Omnissiah.mod" \
+            || { echo "Missing Lantern of the Omnissiah.mod" && exit 1; }
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: Lantern-${{ env.VERSION }}
+          path: Lantern-${{ env.VERSION }}.zip
+
+      - name: Upload to Nexus Mods
+        if: ${{ !github.event.release.prerelease }}
+        uses: Nexus-Mods/upload-action@v1.0.0-beta.8
+        with:
+          api_key: ${{ secrets.NEXUSMODS_APIKEY }}
+          file_id: ${{ vars.NEXUS_FILE_ID }}
+          filename: Lantern-${{ env.VERSION }}.zip
+          version: ${{ env.VERSION }}
+          display_name: Lantern of the Omnissiah ${{ env.VERSION }}
+          category: main
+          description: ${{ github.event.release.body }}
