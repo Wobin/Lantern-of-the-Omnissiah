@@ -53,6 +53,12 @@ return {
 	loc_setting_show_recommendations_tooltip = {
 		en = "When enabled, shows the GamesLantern recommended-weapon icons and tooltips on the loadout screen and the recommendation panel on the weapon selection screen. Turn off to hide all recommendation UI.",
 	},
+	loc_setting_show_build_rings = {
+		en = "Show build rings in talent tree",
+	},
+	loc_setting_show_build_rings_tooltip = {
+		en = "Draw an orange ring behind each talent in the imported build that you have not selected yet. Rings clear as you spend points, and reappear if you remove a build talent.",
+	},
 	loc_setting_skip_confirm = {
 		en = "Skip confirmation popup",
 	},

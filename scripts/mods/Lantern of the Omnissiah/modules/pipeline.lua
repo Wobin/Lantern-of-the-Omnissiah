@@ -13,6 +13,18 @@ local SLUG_TO_ARCHETYPE = {
 
 local M = {}
 
+function M._resolve_target_set(anchors, slug_to_talent, lookup)
+	local set = {}
+	for _, a in ipairs(anchors) do
+		local talent_id = slug_to_talent[a.slug]
+		local info = talent_id and lookup[talent_id]
+		if info then
+			set[info.widget_name] = true
+		end
+	end
+	return set
+end
+
 function M.apply_build(ctx)
 	local Layout = mod._modules.layout
 	local Popups = mod._modules.popups
@@ -43,6 +55,9 @@ function M.apply_build(ctx)
 	local archetype = profile.archetype
 	local layouts   = Layout.archetype_layouts(archetype)
 	local lookup    = Layout.build_talent_lookup(layouts)
+
+	local target_set = M._resolve_target_set(ctx.anchors, ctx.slug_to_talent, lookup)
+	TalentLayoutParser.validate_talent_layouts(target_set, layouts, true)
 
 	local node_tiers = {}
 	local cost_per_layout = { 0, 0 }
@@ -147,12 +162,15 @@ function M.apply_build(ctx)
 	local talents_version = TalentLayoutParser.talents_version(profile)
 
 	local on_confirm = function()
+		local Store = mod._modules.talent_target_store
 		if effective_mode == "overwrite_current" then
 			local id = Preset.overwrite_active_with_talents(node_tiers, talents_version, preset_name, ctx.equipment)
+			if id then Store.set(id, target_set) end
 			mod:notify(mod:localize("loc_lantern_toast_overwrote", display_title, applied, skipped))
 			mod.dbg("[import] overwrote preset %s with %d talents", tostring(id), applied)
 		else
 			local new_id = Preset.create_with_talents(node_tiers, talents_version, preset_name, ctx.equipment)
+			if new_id then Store.set(new_id, target_set) end
 			mod:notify(mod:localize("loc_lantern_toast_imported", display_title, applied, skipped))
 			mod.dbg("[import] created preset %s with %d talents", tostring(new_id), applied)
 		end

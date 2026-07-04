@@ -15,6 +15,13 @@ return {
 				tooltip       = "loc_setting_show_recommendations_tooltip",
 			},
 			{
+				setting_id    = "show_build_rings",
+				type          = "checkbox",
+				default_value = true,
+				title         = "loc_setting_show_build_rings",
+				tooltip       = "loc_setting_show_build_rings_tooltip",
+			},
+			{
 				setting_id    = "skip_confirm",
 				type          = "checkbox",
 				default_value = false,

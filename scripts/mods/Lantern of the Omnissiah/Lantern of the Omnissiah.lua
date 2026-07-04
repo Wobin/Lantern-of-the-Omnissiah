@@ -1,13 +1,13 @@
 --[[
 Name: Lantern of the Omnissiah
 Author: Wobin
-Date: 26/06/2026
-Version: 1.7.1
+Date: 05/07/2026
+Version: 1.8.0
 Repository: https://github.com/Wobin/Lantern-of-the-Omnissiah
 --]]
 
 local mod = get_mod("Lantern of the Omnissiah")
-mod.version = "1.7.1"
+mod.version = "1.8.0"
 
 mod.dbg = function(fmt, ...)
 	if mod:get("debug") then mod:info(fmt, ...) end
@@ -26,6 +26,8 @@ mod._modules = {
 	popups            = mod:io_dofile(MODULES .. "popups"),
 	preset            = mod:io_dofile(MODULES .. "preset"),
 	pipeline          = mod:io_dofile(MODULES .. "pipeline"),
+	talent_target_store = mod:io_dofile(MODULES .. "talent_target_store"),
+	talent_rings        = mod:io_dofile(MODULES .. "talent_rings"),
 }
 local Clipboard        = mod._modules.clipboard
 local SlugCache        = mod._modules.slug_cache
@@ -41,6 +43,25 @@ local FETCH_TIMEOUT_SEC = 30
 local POLL_INTERVAL_SEC = 0.1
 
 mod.is_fetch_in_flight = function() return _pending ~= nil end
+
+local _rings_enabled = true
+
+local function refresh_ring_setting()
+	_rings_enabled = mod:get("show_build_rings")
+	if _rings_enabled == nil then _rings_enabled = true end
+	mod._modules.talent_rings.set_enabled(_rings_enabled)
+end
+
+function mod.on_setting_changed(setting_id)
+	if setting_id == "show_build_rings" then refresh_ring_setting() end
+end
+
+local function push_active_target()
+	local ProfileUtils = require("scripts/utilities/profile_utils")
+	local id = ProfileUtils.get_active_profile_preset_id()
+	local set = id and mod._modules.talent_target_store.get(id) or nil
+	mod._modules.talent_rings.set_target(set)
+end
 
 local HTML_CACHE_MAX = 16
 local _html_cache = mod:persistent_table("html_cache", { entries = {}, order = {} })
@@ -271,6 +292,9 @@ mod.on_all_mods_loaded = function()
 
 	Fetch.sweep_orphans()
 
+	mod._modules.talent_rings.install()
+	refresh_ring_setting()
+
 	mod:add_global_localize_strings({
 		loc_lantern_recheck_clipboard = {
 			en = "Re-check Clipboard for GamesLantern link",
@@ -314,6 +338,29 @@ mod.on_all_mods_loaded = function()
 				mod:echo("    %s", m)
 			end
 		end
+	end)
+
+	mod:hook("TalentBuilderView", "on_enter", function(orig, self, ...)
+		local ret = orig(self, ...)
+		push_active_target()
+		return ret
+	end)
+
+	mod:hook("TalentBuilderView", "event_on_profile_preset_changed", function(orig, self, ...)
+		local ret = orig(self, ...)
+		push_active_target()
+		return ret
+	end)
+
+	mod:command("lantern_show_target", "Print the active preset's stored talent-ring target set", function()
+		local ProfileUtils = require("scripts/utilities/profile_utils")
+		local id = ProfileUtils.get_active_profile_preset_id()
+		if not id then mod:echo("no active preset"); return end
+		local set = mod._modules.talent_target_store.get(id)
+		if not set then mod:echo("preset %s has no stored talent target", tostring(id)); return end
+		local n = 0
+		for w in pairs(set) do n = n + 1; mod:echo("  target: %s", tostring(w)) end
+		mod:echo("=== preset %s target: %d nodes (rings=%s) ===", tostring(id), n, tostring(_rings_enabled))
 	end)
 
 	mod:hook(CLASS.ViewElementProfilePresets, "cb_add_new_profile_preset", function(orig, self, ...)
@@ -363,8 +410,13 @@ mod.on_all_mods_loaded = function()
 		local idx = self._active_customize_preset_index
 		local preset_id = idx and self:_get_profile_preset_id_by_widget_index(idx)
 		local ret = orig(self, widget, element)
-		if preset_id and mod._modules.equipment_store then
-			mod._modules.equipment_store.clear(preset_id)
+		if preset_id then
+			if mod._modules.equipment_store then
+				mod._modules.equipment_store.clear(preset_id)
+			end
+			if mod._modules.talent_target_store then
+				mod._modules.talent_target_store.clear(preset_id)
+			end
 		end
 		return ret
 	end)
