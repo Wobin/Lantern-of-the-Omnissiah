@@ -22,6 +22,13 @@ return {
 				tooltip       = "loc_setting_show_build_rings_tooltip",
 			},
 			{
+				setting_id    = "export_bookmarklet_button",
+				type          = "checkbox",
+				default_value = false,
+				title         = "loc_setting_export_bookmarklet",
+				tooltip       = "loc_setting_export_bookmarklet_tooltip",
+			},
+			{
 				setting_id    = "skip_confirm",
 				type          = "checkbox",
 				default_value = false,

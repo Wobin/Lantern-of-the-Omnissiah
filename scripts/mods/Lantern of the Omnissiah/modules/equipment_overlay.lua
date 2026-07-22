@@ -1,4 +1,6 @@
 local mod = get_mod("Lantern of the Omnissiah")
+local name_key = mod:io_dofile("Lantern of the Omnissiah/scripts/mods/Lantern of the Omnissiah/modules/name_key")
+local strip_values = mod:io_dofile("Lantern of the Omnissiah/scripts/mods/Lantern of the Omnissiah/modules/strip_values")
 
 local M = {}
 
@@ -142,21 +144,6 @@ local function build_entry_for_slot(eq, slot_name)
 		end
 	end
 	return entry
-end
-
-local function name_key(s)
-	local words = {}
-	for w in tostring(s or ""):lower():gmatch("%w+") do
-		words[#words + 1] = w
-	end
-	table.sort(words)
-	return table.concat(words, " ")
-end
-
-local function strip_values(s)
-	if not s then return "" end
-	s = tostring(s):lower():gsub("[%d%%%+%-–%.,]+", " "):gsub("%s+", " ")
-	return (s:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
 local function matched_entry_for_item(eq, item)

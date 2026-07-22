@@ -16,4 +16,23 @@ function M.extract_gameslantern_url(text)
 	return uuid and ("https://darktide.gameslantern.com/builds/" .. uuid) or nil
 end
 
+local EXPORT_FILE = "lantern_export.json"
+
+function M.write(text)
+	local cb = rawget(_G, "Clipboard")
+	if cb then
+		for _, name in ipairs({ "put", "set", "copy" }) do
+			if type(cb[name]) == "function" then
+				local ok = pcall(cb[name], text)
+				if ok then return "clipboard" end
+			end
+		end
+	end
+	local f = Mods.lua.io.open(EXPORT_FILE, "wb")
+	if f then f:write(text); f:close(); return "file" end
+	return nil
+end
+
+function M.export_file_path() return EXPORT_FILE end
+
 return M

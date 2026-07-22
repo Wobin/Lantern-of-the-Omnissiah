@@ -1,13 +1,13 @@
 --[[
 Name: Lantern of the Omnissiah
 Author: Wobin
-Date: 05/07/2026
-Version: 1.8.0
+Date: 18/07/2026
+Version: 2.0.0
 Repository: https://github.com/Wobin/Lantern-of-the-Omnissiah
 --]]
 
 local mod = get_mod("Lantern of the Omnissiah")
-mod.version = "1.8.0"
+mod.version = "2.0.0"
 
 mod.dbg = function(fmt, ...)
 	if mod:get("debug") then mod:info(fmt, ...) end
@@ -21,13 +21,18 @@ mod._modules = {
 	parser            = mod:io_dofile(MODULES .. "parser"),
 	equipment_parser  = mod:io_dofile(MODULES .. "equipment_parser"),
 	equipment_store   = mod:io_dofile(MODULES .. "equipment_store"),
+	name_key          = mod:io_dofile(MODULES .. "name_key"),
+	strip_values      = mod:io_dofile(MODULES .. "strip_values"),
 	equipment_overlay = mod:io_dofile(MODULES .. "equipment_overlay"),
 	layout            = mod:io_dofile(MODULES .. "layout"),
 	popups            = mod:io_dofile(MODULES .. "popups"),
 	preset            = mod:io_dofile(MODULES .. "preset"),
 	pipeline          = mod:io_dofile(MODULES .. "pipeline"),
+	export              = mod:io_dofile(MODULES .. "export"),
+	export_maps         = mod:io_dofile("Lantern of the Omnissiah/scripts/mods/Lantern of the Omnissiah/gameslantern_export_maps"),
 	talent_target_store = mod:io_dofile(MODULES .. "talent_target_store"),
 	talent_rings        = mod:io_dofile(MODULES .. "talent_rings"),
+	export_button       = mod:io_dofile(MODULES .. "export_button"),
 }
 local Clipboard        = mod._modules.clipboard
 local SlugCache        = mod._modules.slug_cache
@@ -52,8 +57,28 @@ local function refresh_ring_setting()
 	mod._modules.talent_rings.set_enabled(_rings_enabled)
 end
 
+local function copy_bookmarklet()
+	local bm = mod._modules.export.BOOKMARKLET
+	if not bm then mod:echo("(bookmarklet unavailable)"); return end
+	local method = mod._modules.clipboard.write(bm)
+	if method == "clipboard" then
+		mod:notify(mod:localize("loc_lantern_toast_bookmarklet_clipboard"))
+	elseif method == "file" then
+		mod:notify(mod:localize("loc_lantern_toast_bookmarklet_file", mod._modules.clipboard.export_file_path()))
+	else
+		mod:notify(mod:localize("loc_lantern_toast_export_failed"))
+	end
+end
+
 function mod.on_setting_changed(setting_id)
-	if setting_id == "show_build_rings" then refresh_ring_setting() end
+	if setting_id == "show_build_rings" then
+		refresh_ring_setting()
+	elseif setting_id == "export_bookmarklet_button" then
+		if mod:get("export_bookmarklet_button") then
+			copy_bookmarklet()
+			mod:set("export_bookmarklet_button", false)
+		end
+	end
 end
 
 local function push_active_target()
@@ -61,6 +86,121 @@ local function push_active_target()
 	local id = ProfileUtils.get_active_profile_preset_id()
 	local set = id and mod._modules.talent_target_store.get(id) or nil
 	mod._modules.talent_rings.set_target(set)
+end
+
+local function build_equipment()
+	local ItemUtils = require("scripts/utilities/items")
+	local MasterItems = require("scripts/backend/master_items")
+	local WeaponTemplates = require("scripts/utilities/weapon/weapon_template")
+	local Export = mod._modules.export
+	local Maps = mod._modules.export_maps
+	local maps = {
+		name_key = mod._modules.name_key,
+		WEAPONS = Maps.WEAPONS, WEAPON_BARS = Maps.WEAPON_BARS, WEAPON_TRAITS = Maps.WEAPON_TRAITS,
+		CURIOS = Maps.CURIOS, CURIO_TRAITS = Maps.CURIO_TRAITS,
+		WEAPON_MODIFIERS = Maps.WEAPON_MODIFIERS, CURIO_MODIFIERS = Maps.CURIO_MODIFIERS,
+	}
+	local player = Managers.player and Managers.player:local_player(1)
+	local profile = player and player:profile()
+	local lo = profile and profile.loadout or {}
+
+	local function blessing_ns(item)
+		local out = {}
+		for _, t in ipairs(item.traits or {}) do
+			local mi = MasterItems.get_item(t.id)
+			local n = mi and mi.icon and tostring(mi.icon):match("weapon_trait_(%d+)")
+			out[#out + 1] = n and tonumber(n) or false
+		end
+		return out
+	end
+	local function stat_display(item)
+		local disp = {}
+		local ok, tmpl = pcall(WeaponTemplates.weapon_template_from_item, item)
+		if ok and tmpl and tmpl.base_stats then
+			for stat_name, cfg in pairs(tmpl.base_stats) do
+				if cfg.display_name then disp[stat_name] = Localize(cfg.display_name) end
+			end
+		end
+		return disp
+	end
+	local strip_values = mod._modules.strip_values
+	local function perk_effects(item)
+		local out = {}
+		for _, p in ipairs(item.perks or {}) do
+			local mi = MasterItems.get_item(p.id)
+			local desc = mi and ItemUtils.trait_description and ItemUtils.trait_description(mi, p.rarity, p.value)
+			out[#out + 1] = strip_values(desc or "")
+		end
+		return out
+	end
+
+	local weapons, curios, unmatched = {}, {}, 0
+	for _, slot in ipairs({ "slot_primary", "slot_secondary" }) do
+		local it = lo[slot]
+		if it and it.name then
+			local e, miss = Export._weapon_entry({
+				display_name = ItemUtils.display_name(it), rarity = it.rarity or 5,
+				base_stats = it.base_stats or {}, stat_display = stat_display(it),
+				blessing_ns = blessing_ns(it), perk_effects = perk_effects(it),
+			}, maps)
+			if e then weapons[#weapons + 1] = e else unmatched = unmatched + 1; mod.dbg("[export] no GL weapon match %s (nk=%s)", slot, tostring(miss)) end
+		end
+	end
+	for _, slot in ipairs({ "slot_attachment_1", "slot_attachment_2", "slot_attachment_3" }) do
+		local it = lo[slot]
+		if it and it.name then
+			local mi = MasterItems.get_item(it.name)
+			local dn = mi and mi.display_name and Localize(mi.display_name) or ""
+			local stat_txt = (ItemUtils.display_name(it) or ""):lower()
+			local kw
+			for _, k in ipairs({ "health", "toughness", "stamina", "wound" }) do
+				if stat_txt:find(k, 1, true) then kw = k; break end
+			end
+			local e, miss = Export._curio_entry({ display_name = dn, rarity = it.rarity or 5, stat_keyword = kw, perk_effects = perk_effects(it) }, maps)
+			if e then curios[#curios + 1] = e else unmatched = unmatched + 1; mod.dbg("[export] no GL curio match %s (nk=%s)", slot, tostring(miss)) end
+		end
+	end
+	return weapons, curios, unmatched
+end
+
+local function run_export()
+	local Export = mod._modules.export
+	local Layout = mod._modules.layout
+	local Maps   = mod._modules.export_maps
+	local player = Managers.player and Managers.player:local_player(1)
+	local profile = player and player:profile()
+	if not profile then mod:notify(mod:localize("loc_lantern_toast_no_player")); return end
+	local archetype = profile.archetype and profile.archetype.name
+	local class_id = archetype and Maps.CLASS_MAP[archetype]
+	local class_nodes = archetype and Maps.TALENT_NODES[archetype]
+	if not class_id or not class_nodes then mod:echo("[export] no export map for archetype %s", tostring(archetype)); return end
+
+	local layouts = Layout.archetype_layouts(profile.archetype)
+	local all_nodes = {}
+	for _, lay in ipairs(layouts) do for _, n in ipairs(lay.nodes) do all_nodes[#all_nodes + 1] = n end end
+	local layout_index = Export._layout_index(all_nodes)
+
+	local selected = {}
+	local cost_of = {}
+	for _, n in ipairs(all_nodes) do cost_of[n.widget_name] = n.cost or 0 end
+	for widget_name, tier in pairs(profile.selected_nodes or {}) do
+		if tier and tier > 0 and (cost_of[widget_name] or 0) > 0 then selected[#selected + 1] = widget_name end
+	end
+	if #selected == 0 then mod:notify(mod:localize("loc_lantern_toast_export_empty")); return end
+
+	local ids_default, ids_stimm, skipped = Export._resolve(selected, layout_index, class_nodes)
+	local weapons, curios, unmatched_eq = build_equipment()
+	local name = mod:localize("loc_lantern_export_default_name", tostring(archetype))
+	local json, counts = Export.assemble({ name = name, class_id = class_id, ids_default = ids_default, ids_stimm = ids_stimm, weapons = weapons, curios = curios })
+	local method = mod._modules.clipboard.write(json)
+	mod.dbg("[export] archetype=%s default=%d stimm=%d skipped=%d unmatched_eq=%d method=%s", tostring(archetype), counts.default, counts.stimm, skipped, unmatched_eq, tostring(method))
+	if method == "clipboard" then
+		mod:notify(mod:localize("loc_lantern_toast_export_clipboard2", counts.default + counts.stimm, #weapons, #curios))
+	elseif method == "file" then
+		mod:notify(mod:localize("loc_lantern_toast_export_file", mod._modules.clipboard.export_file_path()))
+	else
+		mod:notify(mod:localize("loc_lantern_toast_export_failed"))
+	end
 end
 
 local HTML_CACHE_MAX = 16
@@ -305,6 +445,10 @@ mod.on_all_mods_loaded = function()
 		mod.run_import("overwrite_current", { notify_when_empty = true })
 	end)
 
+	mod:command("lantern_export", "Copy the current build's talents to the clipboard for Gameslantern export", run_export)
+
+	mod:command("lantern_export_bookmarklet", "Copy the Gameslantern export bookmarklet to the clipboard", copy_bookmarklet)
+
 	mod:command("lantern_fetchtest", "Diagnostic: fetch a build URL via the active transport and report the result", function()
 		local raw = Clipboard.read()
 		local url = Clipboard.extract_gameslantern_url(raw)
@@ -361,6 +505,12 @@ mod.on_all_mods_loaded = function()
 		local n = 0
 		for w in pairs(set) do n = n + 1; mod:echo("  target: %s", tostring(w)) end
 		mod:echo("=== preset %s target: %d nodes (rings=%s) ===", tostring(id), n, tostring(_rings_enabled))
+	end)
+
+	mod:hook(CLASS.InventoryBackgroundView, "on_enter", function(orig, self, ...)
+		local ret = orig(self, ...)
+		mod._modules.export_button.install(self, run_export)
+		return ret
 	end)
 
 	mod:hook(CLASS.ViewElementProfilePresets, "cb_add_new_profile_preset", function(orig, self, ...)
