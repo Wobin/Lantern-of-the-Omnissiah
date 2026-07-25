@@ -9,7 +9,7 @@ local RING_OFFSET_Z = -10
 local RING_GROW     = 16
 local DEFAULT_GLOW  = "content/ui/materials/frames/talents/circular_frame_glow"
 
-local _state = mod:persistent_table("talent_rings_state", { target = {}, enabled = true })
+local _state = mod:persistent_table("talent_rings_state", { target = {}, enabled = true, active = false })
 
 local NODE_DEF_NAMES = {
 	"node_definition",
@@ -25,6 +25,7 @@ local NODE_DEF_NAMES = {
 
 local function ring_visible(content)
 	if not _state.enabled then return false end
+	if not _state.active then return false end
 	local nd = content.node_data
 	if not nd then return false end
 	if not _state.target[nd.widget_name] then return false end
@@ -75,6 +76,7 @@ local function inject(def)
 end
 
 function M.install()
+	_state.active = false
 	local ok, node_defs = pcall(require, "scripts/ui/views/talent_builder_view/talent_builder_view_node_definitions")
 	if not ok or not node_defs then
 		mod:warning("[rings] node_definitions unavailable; rings disabled")
@@ -94,6 +96,10 @@ end
 
 function M.set_enabled(v)
 	_state.enabled = v and true or false
+end
+
+function M.set_active(v)
+	_state.active = v and true or false
 end
 
 return M

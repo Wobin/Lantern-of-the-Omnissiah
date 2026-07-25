@@ -3,7 +3,7 @@ return {
 		en = "Lantern of the Omnissiah",
 	},
 	mod_description = {
-		en = "Import a Gameslantern build directly into your loadouts",
+		en = "Import and export a Gameslantern build directly into your loadouts",
 	},
 
 	loc_lantern_confirm_title_default = {
@@ -101,14 +101,21 @@ return {
 		en = "Lantern: overwrote current preset with '%s' — %d talents applied (%d skipped)",
 	},
 
-	loc_lantern_toast_export_clipboard = { en = "Build copied (%d talents). Click the Gameslantern Export bookmarklet in your browser." },
-	loc_lantern_toast_export_clipboard2 = { en = "Build copied (%d talents, %d weapons, %d curios). Click the Gameslantern Export bookmarklet." },
+	loc_lantern_toast_export_clipboard = { en = "Build copied (%d talents). Click your saved Gameslantern Export bookmarklet in your logged-in browser tab." },
+	loc_lantern_toast_export_clipboard2 = { en = "Build copied (%d talents, %d weapons, %d curios). Click your saved Gameslantern Export bookmarklet." },
 	loc_lantern_toast_export_file      = { en = "Clipboard unavailable; build written to %s. Open it, copy all, then use the bookmarklet." },
 	loc_lantern_toast_export_failed    = { en = "Export failed: could not write the build out." },
 	loc_lantern_toast_export_empty     = { en = "No talents selected to export." },
 	loc_lantern_export_default_name    = { en = "%s build" },
-	loc_lantern_toast_bookmarklet_clipboard = { en = "Export bookmarklet copied. Make a new browser bookmark and paste it as the URL." },
-	loc_lantern_toast_bookmarklet_file      = { en = "Clipboard unavailable; bookmarklet written to %s. Open it and paste the line as a new bookmark URL." },
+	loc_lantern_export_named           = { en = "%s's %s build" },
+	loc_lantern_toast_export_staged     = { en = "Build copied and staged. Go to your matching character and press + to add it as a preset." },
+	loc_lantern_toast_staged_imported   = { en = "Added %s as a new preset (%d talents)." },
+	loc_lantern_toast_staged_mismatch   = { en = "Staged build is for %s; switch to that character, then press +." },
+	loc_lantern_toast_nothing_to_import = { en = "Nothing to import - copy a GamesLantern link or export a teammate's build first." },
+	loc_lantern_menu_import             = { en = "Import from GamesLantern/Inspect" },
+	loc_lantern_menu_create             = { en = "Create new profile" },
+	loc_lantern_toast_bookmarklet_clipboard = { en = "Export bookmarklet copied. Make a NEW browser bookmark and paste it as the URL - do not paste it into the address bar." },
+	loc_lantern_toast_bookmarklet_file      = { en = "Clipboard unavailable; bookmarklet written to %s. Open it and paste the line as a NEW bookmark URL (not the address bar)." },
 	loc_setting_export_bookmarklet          = { en = "Copy export bookmarklet to clipboard" },
 	loc_setting_export_bookmarklet_tooltip  = { en = "Toggle on to copy the Gameslantern export bookmarklet to your clipboard. It flips back off automatically." },
 }

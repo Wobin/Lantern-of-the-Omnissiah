@@ -1,13 +1,13 @@
 --[[
 Name: Lantern of the Omnissiah
 Author: Wobin
-Date: 18/07/2026
-Version: 2.0.0
+Date: 26/07/2026
+Version: 2.1.0
 Repository: https://github.com/Wobin/Lantern-of-the-Omnissiah
 --]]
 
 local mod = get_mod("Lantern of the Omnissiah")
-mod.version = "2.0.0"
+mod.version = "2.1.0"
 
 mod.dbg = function(fmt, ...)
 	if mod:get("debug") then mod:info(fmt, ...) end
@@ -33,6 +33,11 @@ mod._modules = {
 	talent_target_store = mod:io_dofile(MODULES .. "talent_target_store"),
 	talent_rings        = mod:io_dofile(MODULES .. "talent_rings"),
 	export_button       = mod:io_dofile(MODULES .. "export_button"),
+	loadout_recommendation = mod:io_dofile(MODULES .. "loadout_recommendation"),
+	build_store         = mod:io_dofile(MODULES .. "build_store"),
+	staged_build        = mod:io_dofile(MODULES .. "staged_build"),
+	build               = mod:io_dofile(MODULES .. "build"),
+	import_menu         = mod:io_dofile(MODULES .. "import_menu"),
 }
 local Clipboard        = mod._modules.clipboard
 local SlugCache        = mod._modules.slug_cache
@@ -84,11 +89,11 @@ end
 local function push_active_target()
 	local ProfileUtils = require("scripts/utilities/profile_utils")
 	local id = ProfileUtils.get_active_profile_preset_id()
-	local set = id and mod._modules.talent_target_store.get(id) or nil
+	local set = id and mod._modules.build_store.target_set(id) or nil
 	mod._modules.talent_rings.set_target(set)
 end
 
-local function build_equipment()
+local function build_equipment(player)
 	local ItemUtils = require("scripts/utilities/items")
 	local MasterItems = require("scripts/backend/master_items")
 	local WeaponTemplates = require("scripts/utilities/weapon/weapon_template")
@@ -100,7 +105,6 @@ local function build_equipment()
 		CURIOS = Maps.CURIOS, CURIO_TRAITS = Maps.CURIO_TRAITS,
 		WEAPON_MODIFIERS = Maps.WEAPON_MODIFIERS, CURIO_MODIFIERS = Maps.CURIO_MODIFIERS,
 	}
-	local player = Managers.player and Managers.player:local_player(1)
 	local profile = player and player:profile()
 	local lo = profile and profile.loadout or {}
 
@@ -163,11 +167,10 @@ local function build_equipment()
 	return weapons, curios, unmatched
 end
 
-local function run_export()
-	local Export = mod._modules.export
-	local Layout = mod._modules.layout
+local function run_export(player)
 	local Maps   = mod._modules.export_maps
-	local player = Managers.player and Managers.player:local_player(1)
+	local local_player = Managers.player and Managers.player:local_player(1)
+	player = player or local_player
 	local profile = player and player:profile()
 	if not profile then mod:notify(mod:localize("loc_lantern_toast_no_player")); return end
 	local archetype = profile.archetype and profile.archetype.name
@@ -175,27 +178,26 @@ local function run_export()
 	local class_nodes = archetype and Maps.TALENT_NODES[archetype]
 	if not class_id or not class_nodes then mod:echo("[export] no export map for archetype %s", tostring(archetype)); return end
 
-	local layouts = Layout.archetype_layouts(profile.archetype)
-	local all_nodes = {}
-	for _, lay in ipairs(layouts) do for _, n in ipairs(lay.nodes) do all_nodes[#all_nodes + 1] = n end end
-	local layout_index = Export._layout_index(all_nodes)
+	local build = mod._modules.build.from_profile(player)
+	if not build or not next(build.node_tiers) then mod:notify(mod:localize("loc_lantern_toast_export_empty")); return end
 
-	local selected = {}
-	local cost_of = {}
-	for _, n in ipairs(all_nodes) do cost_of[n.widget_name] = n.cost or 0 end
-	for widget_name, tier in pairs(profile.selected_nodes or {}) do
-		if tier and tier > 0 and (cost_of[widget_name] or 0) > 0 then selected[#selected + 1] = widget_name end
-	end
-	if #selected == 0 then mod:notify(mod:localize("loc_lantern_toast_export_empty")); return end
-
-	local ids_default, ids_stimm, skipped = Export._resolve(selected, layout_index, class_nodes)
-	local weapons, curios, unmatched_eq = build_equipment()
-	local name = mod:localize("loc_lantern_export_default_name", tostring(archetype))
-	local json, counts = Export.assemble({ name = name, class_id = class_id, ids_default = ids_default, ids_stimm = ids_stimm, weapons = weapons, curios = curios })
+	local weapons, curios, unmatched_eq = build_equipment(player)
+	local json, counts = mod._modules.build.to_gl_json(build, { weapons = weapons, curios = curios })
+	if not json then mod:echo("[export] no export map for archetype %s", tostring(archetype)); return end
 	local method = mod._modules.clipboard.write(json)
-	mod.dbg("[export] archetype=%s default=%d stimm=%d skipped=%d unmatched_eq=%d method=%s", tostring(archetype), counts.default, counts.stimm, skipped, unmatched_eq, tostring(method))
+	local staged = false
+	if player ~= local_player and build then
+		mod._modules.staged_build.set(build)
+		staged = true
+	end
+	mod.dbg("[export] archetype=%s default=%d stimm=%d skipped=%d unmatched_eq=%d method=%s staged=%s",
+		tostring(archetype), counts.default, counts.stimm, counts.skipped or 0, unmatched_eq, tostring(method), tostring(staged))
 	if method == "clipboard" then
-		mod:notify(mod:localize("loc_lantern_toast_export_clipboard2", counts.default + counts.stimm, #weapons, #curios))
+		if staged then
+			mod:notify(mod:localize("loc_lantern_toast_export_staged"))
+		else
+			mod:notify(mod:localize("loc_lantern_toast_export_clipboard2", counts.default + counts.stimm, #weapons, #curios))
+		end
 	elseif method == "file" then
 		mod:notify(mod:localize("loc_lantern_toast_export_file", mod._modules.clipboard.export_file_path()))
 	else
@@ -445,7 +447,7 @@ mod.on_all_mods_loaded = function()
 		mod.run_import("overwrite_current", { notify_when_empty = true })
 	end)
 
-	mod:command("lantern_export", "Copy the current build's talents to the clipboard for Gameslantern export", run_export)
+	mod:command("lantern_export", "Copy the current build's talents to the clipboard for Gameslantern export", function() run_export() end)
 
 	mod:command("lantern_export_bookmarklet", "Copy the Gameslantern export bookmarklet to the clipboard", copy_bookmarklet)
 
@@ -467,7 +469,7 @@ mod.on_all_mods_loaded = function()
 		local ProfileUtils = require("scripts/utilities/profile_utils")
 		local active_id = ProfileUtils.get_active_profile_preset_id()
 		if not active_id then mod:echo("no active preset"); return end
-		local eq = mod._modules.equipment_store.get(active_id)
+		local eq = mod._modules.build_store.equipment(active_id)
 		if not eq then mod:echo("preset %s has no stored equipment", tostring(active_id)); return end
 		mod:echo("=== preset %s equipment ===", tostring(active_id))
 		for i, w in ipairs(eq.weapons or {}) do
@@ -484,15 +486,26 @@ mod.on_all_mods_loaded = function()
 		end
 	end)
 
+	local function view_owns_build(self)
+		return self._is_own_player and not self._is_readonly
+	end
+
 	mod:hook("TalentBuilderView", "on_enter", function(orig, self, ...)
 		local ret = orig(self, ...)
-		push_active_target()
+		local owns = view_owns_build(self)
+		mod._modules.talent_rings.set_active(owns)
+		if owns then push_active_target() end
 		return ret
+	end)
+
+	mod:hook("TalentBuilderView", "on_exit", function(orig, self, ...)
+		mod._modules.talent_rings.set_active(false)
+		return orig(self, ...)
 	end)
 
 	mod:hook("TalentBuilderView", "event_on_profile_preset_changed", function(orig, self, ...)
 		local ret = orig(self, ...)
-		push_active_target()
+		if view_owns_build(self) then push_active_target() end
 		return ret
 	end)
 
@@ -500,7 +513,7 @@ mod.on_all_mods_loaded = function()
 		local ProfileUtils = require("scripts/utilities/profile_utils")
 		local id = ProfileUtils.get_active_profile_preset_id()
 		if not id then mod:echo("no active preset"); return end
-		local set = mod._modules.talent_target_store.get(id)
+		local set = mod._modules.build_store.target_set(id)
 		if not set then mod:echo("preset %s has no stored talent target", tostring(id)); return end
 		local n = 0
 		for w in pairs(set) do n = n + 1; mod:echo("  target: %s", tostring(w)) end
@@ -509,15 +522,60 @@ mod.on_all_mods_loaded = function()
 
 	mod:hook(CLASS.InventoryBackgroundView, "on_enter", function(orig, self, ...)
 		local ret = orig(self, ...)
-		mod._modules.export_button.install(self, run_export)
+		local view = self
+		mod._modules.export_button.install(self, function()
+			run_export(view._preview_player)
+		end)
 		return ret
 	end)
 
-	mod:hook(CLASS.ViewElementProfilePresets, "cb_add_new_profile_preset", function(orig, self, ...)
-		if mod.run_import("new_preset") then
+	local function do_import_or_notify()
+		local SB = mod._modules.staged_build
+		local staged = SB and SB.get()
+		if staged then
+			local player = Managers.player and Managers.player:local_player(1)
+			local profile = player and player:profile()
+			local current = profile and profile.archetype and profile.archetype.name
+			if staged.archetype == current then
+				staged.node_tiers = mod._modules.build.budget_limit(staged.node_tiers, profile)
+				local id = mod._modules.build.to_preset(staged, "new_preset")
+				if id then
+					SB.clear()
+					local n = 0; for _ in pairs(staged.node_tiers or {}) do n = n + 1 end
+					mod:notify(mod:localize("loc_lantern_toast_staged_imported", tostring(staged.title), n))
+				end
+				return
+			end
+			mod:notify(mod:localize("loc_lantern_toast_staged_mismatch", tostring(staged.archetype)))
 			return
 		end
-		return orig(self, ...)
+		if not mod.run_import("new_preset") then
+			mod:notify(mod:localize("loc_lantern_toast_nothing_to_import"))
+		end
+	end
+
+	mod:hook(CLASS.ViewElementProfilePresets, "init", function(orig, self, ...)
+		local ret = orig(self, ...)
+		mod._modules.import_menu.install(self)
+		return ret
+	end)
+
+	mod:hook(CLASS.ViewElementProfilePresets, "cb_add_new_profile_preset", function(orig, self)
+		mod._modules.import_menu.open(self, {
+			on_import = do_import_or_notify,
+			on_create = function() orig(self) end,
+		})
+	end)
+
+	mod:hook(CLASS.ViewElementProfilePresets, "update", function(orig, self, ...)
+		local ret = orig(self, ...)
+		mod._modules.import_menu.process(self)
+		return ret
+	end)
+
+	mod:hook(CLASS.ViewElementProfilePresets, "draw", function(orig, self, dt, t, ui_renderer, ...)
+		mod._modules.import_menu.measure(self, ui_renderer)
+		return orig(self, dt, t, ui_renderer, ...)
 	end)
 
 	mod:hook(CLASS.InventoryView, "_setup_individual_layout", function(orig, self, layout)
@@ -561,12 +619,7 @@ mod.on_all_mods_loaded = function()
 		local preset_id = idx and self:_get_profile_preset_id_by_widget_index(idx)
 		local ret = orig(self, widget, element)
 		if preset_id then
-			if mod._modules.equipment_store then
-				mod._modules.equipment_store.clear(preset_id)
-			end
-			if mod._modules.talent_target_store then
-				mod._modules.talent_target_store.clear(preset_id)
-			end
+			mod._modules.build_store.clear(preset_id)
 		end
 		return ret
 	end)
