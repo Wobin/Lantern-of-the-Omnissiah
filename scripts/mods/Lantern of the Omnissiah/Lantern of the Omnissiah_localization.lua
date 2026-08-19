@@ -117,5 +117,6 @@ return {
 	loc_lantern_toast_bookmarklet_clipboard = { en = "Export bookmarklet copied. Make a NEW browser bookmark and paste it as the URL - do not paste it into the address bar." },
 	loc_lantern_toast_bookmarklet_file      = { en = "Clipboard unavailable; bookmarklet written to %s. Open it and paste the line as a NEW bookmark URL (not the address bar)." },
 	loc_setting_export_bookmarklet          = { en = "Copy export bookmarklet to clipboard" },
-	loc_setting_export_bookmarklet_tooltip  = { en = "Toggle on to copy the Gameslantern export bookmarklet to your clipboard. It flips back off automatically." },
+	loc_setting_export_bookmarklet_tooltip  = { en = "Hold the button to copy the Gameslantern export bookmarklet to your clipboard." },
+	loc_setting_export_bookmarklet_button   = { en = "Hold to copy" },
 }

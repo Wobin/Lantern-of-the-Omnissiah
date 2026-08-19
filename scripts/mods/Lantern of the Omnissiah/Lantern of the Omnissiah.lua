@@ -1,13 +1,12 @@
 --[[
 Name: Lantern of the Omnissiah
 Author: Wobin
-Date: 26/07/2026
-Version: 2.1.0
+Date: 19/08/2026
 Repository: https://github.com/Wobin/Lantern-of-the-Omnissiah
 --]]
 
 local mod = get_mod("Lantern of the Omnissiah")
-mod.version = "2.1.0"
+mod.version = mod.get_metadata and mod:get_metadata("version") or "unknown"
 
 mod.dbg = function(fmt, ...)
 	if mod:get("debug") then mod:info(fmt, ...) end
@@ -62,7 +61,7 @@ local function refresh_ring_setting()
 	mod._modules.talent_rings.set_enabled(_rings_enabled)
 end
 
-local function copy_bookmarklet()
+function mod.copy_bookmarklet()
 	local bm = mod._modules.export.BOOKMARKLET
 	if not bm then mod:echo("(bookmarklet unavailable)"); return end
 	local method = mod._modules.clipboard.write(bm)
@@ -78,11 +77,6 @@ end
 function mod.on_setting_changed(setting_id)
 	if setting_id == "show_build_rings" then
 		refresh_ring_setting()
-	elseif setting_id == "export_bookmarklet_button" then
-		if mod:get("export_bookmarklet_button") then
-			copy_bookmarklet()
-			mod:set("export_bookmarklet_button", false)
-		end
 	end
 end
 
@@ -449,7 +443,7 @@ mod.on_all_mods_loaded = function()
 
 	mod:command("lantern_export", "Copy the current build's talents to the clipboard for Gameslantern export", function() run_export() end)
 
-	mod:command("lantern_export_bookmarklet", "Copy the Gameslantern export bookmarklet to the clipboard", copy_bookmarklet)
+	mod:command("lantern_export_bookmarklet", "Copy the Gameslantern export bookmarklet to the clipboard", mod.copy_bookmarklet)
 
 	mod:command("lantern_fetchtest", "Diagnostic: fetch a build URL via the active transport and report the result", function()
 		local raw = Clipboard.read()
@@ -644,4 +638,9 @@ mod.on_all_mods_loaded = function()
 		end
 		return ret
 	end)
+end
+
+
+mod.on_settings_reset = function()
+	refresh_ring_setting()
 end
