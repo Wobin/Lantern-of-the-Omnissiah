@@ -1,11 +1,17 @@
 {
 	"name": "Lantern of the Omnissiah",
 	"description": "Import and export a Gameslantern build directly into your loadouts",
-	"version": "2.1.1",
+	"version": "2.2.0",
 	"author": "Wobin",
 	"homepage": "https://www.nexusmods.com/warhammer40kdarktide/mods/882",
 	"source": "https://github.com/Wobin/Lantern-of-the-Omnissiah",
 	"funding": {
 		"kofi": "https://ko-fi.com/wobin_dwonderdog"
+	},
+	"nexusId": "882",
+	"order": {
+		"require": [],
+		"this_after": [],
+		"this_before": []
 	}
 }
