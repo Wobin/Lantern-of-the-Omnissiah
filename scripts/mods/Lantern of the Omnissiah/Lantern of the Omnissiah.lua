@@ -1,7 +1,7 @@
 --[[
 Name: Lantern of the Omnissiah
 Author: Wobin
-Date: 20/08/2026
+Date: 29/09/2026
 Repository: https://github.com/Wobin/Lantern-of-the-Omnissiah
 --]]
 

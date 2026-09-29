@@ -36,10 +36,11 @@ function M.apply_build(ctx)
 	end
 
 	local layouts = Layout.archetype_layouts(profile.archetype)
-	local node_tiers, over_budget = Build.budget_limit(build.node_tiers, profile)
+	local connected, recovered = Build.connect_selection(build.node_tiers, profile)
+	local node_tiers, over_budget = Build.budget_limit(connected, profile)
 	TalentLayoutParser.validate_talent_layouts(node_tiers, layouts, true)
 	local applied = 0; for _ in pairs(node_tiers) do applied = applied + 1 end
-	local skipped = gl.total_anchors - applied
+	local skipped = math.max(0, gl.total_anchors - applied)
 
 	if applied == 0 then
 		Popups.error(mod:localize("mod_name"), mod:localize("loc_lantern_err_no_resolved_body")); return
@@ -71,9 +72,10 @@ function M.apply_build(ctx)
 		body_lines[#body_lines + 1] = ""
 		body_lines[#body_lines + 1] = mod:localize("loc_lantern_confirm_warn_underleveled", over_budget, gl.total_anchors)
 	end
-	local other_skipped = gl.unresolved_slug + gl.unknown_talent
+	local eff_unresolved = math.max(0, gl.unresolved_slug - (recovered or 0))
+	local other_skipped = eff_unresolved + gl.unknown_talent
 	if other_skipped > 0 then
-		body_lines[#body_lines+1] = ""; body_lines[#body_lines+1] = mod:localize("loc_lantern_confirm_skip_other", other_skipped, gl.unresolved_slug, gl.unknown_talent)
+		body_lines[#body_lines+1] = ""; body_lines[#body_lines+1] = mod:localize("loc_lantern_confirm_skip_other", other_skipped, eff_unresolved, gl.unknown_talent)
 	end
 
 	local display_title = ctx.title or mod:localize("loc_lantern_confirm_title_default")

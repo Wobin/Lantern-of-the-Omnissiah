@@ -216,11 +216,14 @@ function M.assemble(opts)
 	for _, w in ipairs(opts.weapons or {}) do ws[#ws + 1] = weapon_json(w) end
 	local cs = {}
 	for _, c in ipairs(opts.curios or {}) do cs[#cs + 1] = curio_json(c) end
+	local patch_id = tonumber(opts.patch_id)
+	local patch_seg = patch_id and ('"patchId":' .. tostring(patch_id) .. ',') or ''
 	local json = table.concat({
 		'{',
 		'"name":', json_str(opts.name), ',',
 		'"description":null,"image":null,"youtube":null,',
 		'"classId":', json_str(opts.class_id), ',',
+		patch_seg,
 		'"roles":[],"threatLevelId":null,"visibility":1,',
 		'"abilities":[', abilities, '],',
 		'"weapons":[' .. table.concat(ws, ",") .. '],"curios":[' .. table.concat(cs, ",") .. ']',

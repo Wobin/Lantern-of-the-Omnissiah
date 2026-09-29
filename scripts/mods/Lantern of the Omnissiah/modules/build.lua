@@ -147,6 +147,104 @@ function M.budget_limit(node_tiers, profile)
   return limited, total_in - applied, applied
 end
 
+local function connect_index(layouts)
+  local by_name = {}
+  for _, lay in ipairs(layouts) do
+    for _, n in ipairs(lay.nodes) do by_name[n.widget_name] = n end
+  end
+  return by_name
+end
+
+local function is_start_node(n) return n ~= nil and n.type == "start" end
+
+local function path_to_connected(wn, by_name, is_stop, is_free)
+  local INF = math.huge
+  local dist, prev, done = { [wn] = 0 }, {}, {}
+  while true do
+    local u, ud = nil, INF
+    for node, d in pairs(dist) do
+      if not done[node] and d < ud then u, ud = node, d end
+    end
+    if not u then return nil end
+    done[u] = true
+    if u ~= wn and is_stop(u) then
+      local path, cur = {}, prev[u]
+      while cur and cur ~= wn do
+        if not is_free(cur) then path[#path + 1] = cur end
+        cur = prev[cur]
+      end
+      return path
+    end
+    local node = by_name[u]
+    if node then
+      for _, p in ipairs(node.parents or {}) do
+        if by_name[p] and not done[p] then
+          local nd = ud + (is_free(p) and 0 or 1)
+          if nd < (dist[p] or INF) then dist[p] = nd; prev[p] = u end
+        end
+      end
+    end
+  end
+end
+
+function M._connect(node_tiers, layouts)
+  local by_name = connect_index(layouts)
+  local selected = {}
+  for wn, tier in pairs(node_tiers or {}) do selected[wn] = tier end
+  local function reachable()
+    local reach, changed = {}, true
+    while changed do
+      changed = false
+      for wn in pairs(selected) do
+        if not reach[wn] then
+          local n = by_name[wn]
+          if n then
+            for _, p in ipairs(n.parents or {}) do
+              local pn = by_name[p]
+              if pn and (is_start_node(pn) or (selected[p] and reach[p])) then
+                reach[wn] = true; changed = true; break
+              end
+            end
+          end
+        end
+      end
+    end
+    return reach
+  end
+  local added, guard = 0, 0
+  while true do
+    guard = guard + 1
+    if guard > 100000 then break end
+    local reach = reachable()
+    local target
+    for wn in pairs(selected) do
+      if by_name[wn] and not reach[wn] then target = wn; break end
+    end
+    if not target then break end
+    local function is_stop(p)
+      return is_start_node(by_name[p]) or (selected[p] and reach[p])
+    end
+    local function is_free(p)
+      return is_start_node(by_name[p]) or selected[p] ~= nil
+    end
+    local path = path_to_connected(target, by_name, is_stop, is_free)
+    if path then
+      for _, wn in ipairs(path) do
+        if not selected[wn] then selected[wn] = M.NODE_TIER; added = added + 1 end
+      end
+    else
+      selected[target] = nil
+    end
+  end
+  return selected, added
+end
+
+function M.connect_selection(node_tiers, profile)
+  local Layout = mod._modules.layout
+  local layouts = Layout.archetype_layouts(profile.archetype)
+  return M._connect(node_tiers, layouts)
+end
+
 function M.to_gl_json(build, opts)
   opts = opts or {}
   local Export = mod._modules.export
@@ -168,6 +266,7 @@ function M.to_gl_json(build, opts)
     name = build.title, class_id = class_id,
     ids_default = ids_default, ids_stimm = ids_stimm,
     weapons = opts.weapons or {}, curios = opts.curios or {},
+    patch_id = Maps.PATCH_ID,
   })
   counts.skipped = skipped
   return json, counts
