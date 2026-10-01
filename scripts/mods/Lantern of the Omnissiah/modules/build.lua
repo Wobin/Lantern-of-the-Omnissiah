@@ -157,7 +157,13 @@ end
 
 local function is_start_node(n) return n ~= nil and n.type == "start" end
 
-local function path_to_connected(wn, by_name, is_stop, is_free)
+local function exclusive_group_of(n)
+  local g = n and n.requirements and n.requirements.exclusive_group
+  if g and g ~= "" then return g end
+  return nil
+end
+
+local function path_to_connected(wn, by_name, is_stop, is_free, is_blocked)
   local INF = math.huge
   local dist, prev, done = { [wn] = 0 }, {}, {}
   while true do
@@ -178,7 +184,7 @@ local function path_to_connected(wn, by_name, is_stop, is_free)
     local node = by_name[u]
     if node then
       for _, p in ipairs(node.parents or {}) do
-        if by_name[p] and not done[p] then
+        if by_name[p] and not done[p] and not is_blocked(p) then
           local nd = ud + (is_free(p) and 0 or 1)
           if nd < (dist[p] or INF) then dist[p] = nd; prev[p] = u end
         end
@@ -191,6 +197,15 @@ function M._connect(node_tiers, layouts)
   local by_name = connect_index(layouts)
   local selected = {}
   for wn, tier in pairs(node_tiers or {}) do selected[wn] = tier end
+  local occupied = {}
+  for wn in pairs(selected) do
+    local g = exclusive_group_of(by_name[wn])
+    if g then occupied[g] = wn end
+  end
+  local function is_blocked(p)
+    local g = exclusive_group_of(by_name[p])
+    return g ~= nil and occupied[g] ~= nil and occupied[g] ~= p
+  end
   local function reachable()
     local reach, changed = {}, true
     while changed do
@@ -227,10 +242,14 @@ function M._connect(node_tiers, layouts)
     local function is_free(p)
       return is_start_node(by_name[p]) or selected[p] ~= nil
     end
-    local path = path_to_connected(target, by_name, is_stop, is_free)
+    local path = path_to_connected(target, by_name, is_stop, is_free, is_blocked)
     if path then
       for _, wn in ipairs(path) do
-        if not selected[wn] then selected[wn] = M.NODE_TIER; added = added + 1 end
+        if not selected[wn] then
+          selected[wn] = M.NODE_TIER; added = added + 1
+          local g = exclusive_group_of(by_name[wn])
+          if g and not occupied[g] then occupied[g] = wn end
+        end
       end
     else
       selected[target] = nil
