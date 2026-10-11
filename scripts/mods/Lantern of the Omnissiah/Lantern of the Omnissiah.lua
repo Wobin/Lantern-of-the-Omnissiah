@@ -1,7 +1,7 @@
 --[[
 Name: Lantern of the Omnissiah
 Author: Wobin
-Date: 01/10/2026
+Date: 12/10/2026
 Repository: https://github.com/Wobin/Lantern-of-the-Omnissiah
 --]]
 
@@ -78,6 +78,14 @@ function mod.on_setting_changed(setting_id)
 	if setting_id == "show_build_rings" then
 		refresh_ring_setting()
 	end
+end
+
+function mod.on_disabled()
+	mod._modules.talent_rings.set_active(false)
+end
+
+function mod.on_unload()
+	mod._modules.talent_rings.set_active(false)
 end
 
 local function push_active_target()
@@ -298,6 +306,17 @@ local function on_build_html_ready(html, url, mode)
 	})
 end
 
+local function orphan_pending(p)
+	if not p then return end
+	mod.dbg("[run_import] URL changed; orphaning previous fetch seq=%s", tostring(p.seq))
+	Fetch.safe_remove(p.html_path)
+	Fetch.safe_remove(p.done_path)
+	Fetch.safe_remove(p.bat_path)
+	Fetch.safe_remove(p.wrap_path)
+	Fetch.safe_remove(p.err_path)
+	Fetch.safe_remove(p.stage_path)
+end
+
 mod.run_import = function(mode, opts)
 	opts = opts or {}
 	local raw = Clipboard.read()
@@ -314,9 +333,7 @@ mod.run_import = function(mode, opts)
 	end
 	local cached = cache_get(url)
 	if cached then
-		if _pending then
-			mod.dbg("[run_import] URL changed; orphaning previous fetch seq=%d", _pending.seq)
-		end
+		orphan_pending(_pending)
 		mod.dbg("[run_import] cache hit for %s", url)
 		_pending = {
 			url         = url,
@@ -333,18 +350,18 @@ mod.run_import = function(mode, opts)
 		end
 		return false
 	end
-	if _pending then
-		mod.dbg("[run_import] URL changed; orphaning previous fetch seq=%d", _pending.seq)
-	end
+	orphan_pending(_pending)
 	_pending = {
-		url       = url,
-		mode      = mode,
-		started_t = os.clock(),
-		html_path = fetch.html_path,
-		done_path = fetch.done_path,
-		bat_path  = fetch.bat_path,
-		err_path  = fetch.err_path,
-		seq       = fetch.seq,
+		url        = url,
+		mode       = mode,
+		started_t  = os.clock(),
+		html_path  = fetch.html_path,
+		done_path  = fetch.done_path,
+		bat_path   = fetch.bat_path,
+		wrap_path  = fetch.wrap_path,
+		err_path   = fetch.err_path,
+		stage_path = fetch.stage_path,
+		seq        = fetch.seq,
 	}
 	mod:notify(mod:localize("loc_lantern_toast_fetching"))
 	return true
@@ -354,7 +371,9 @@ local function _test_cleanup(h)
 	Fetch.safe_remove(h.html_path)
 	Fetch.safe_remove(h.done_path)
 	Fetch.safe_remove(h.bat_path)
+	Fetch.safe_remove(h.wrap_path)
 	Fetch.safe_remove(h.err_path)
+	Fetch.safe_remove(h.stage_path)
 end
 
 mod.update = function(dt)
@@ -362,7 +381,7 @@ mod.update = function(dt)
 		local h = _test.handle
 		if os.clock() - _test.started_t > FETCH_TIMEOUT_SEC then
 			_test = nil
-			mod:echo("[fetchtest] TIMEOUT after %ds — done file never appeared", FETCH_TIMEOUT_SEC)
+			mod:echo("[fetchtest] TIMEOUT after %ds — done file never appeared (host_stage=%s)", FETCH_TIMEOUT_SEC, tostring(Fetch.read_stage(h)))
 			_test_cleanup(h)
 		else
 			local tf = Mods.lua.io.open(h.done_path, "rb")
@@ -371,8 +390,9 @@ mod.update = function(dt)
 				_test = nil
 				local html = Fetch.read_file(h.html_path)
 				local code, err = Fetch.read_diagnostics(h)
-				mod:echo("[fetchtest] done exit=%s bytes=%s err=%s",
-					tostring(code), tostring(html and #html or 0), tostring(err))
+				local stage = Fetch.read_stage(h)
+				mod:echo("[fetchtest] done exit=%s bytes=%s err=%s stage=%s",
+					tostring(code), tostring(html and #html or 0), tostring(err), tostring(stage))
 				_test_cleanup(h)
 			end
 		end
@@ -390,11 +410,14 @@ mod.update = function(dt)
 		local p = _pending
 		_pending = nil
 		mod:warning("[fetch] timed out seq=%d", p.seq)
+		mod.dbg("[fetch] timed out seq=%d host_stage=%s", p.seq, tostring(Fetch.read_stage(p)))
 		mod:notify(mod:localize("loc_lantern_toast_fetch_timeout"))
 		Fetch.safe_remove(p.html_path)
 		Fetch.safe_remove(p.done_path)
 		Fetch.safe_remove(p.bat_path)
+		Fetch.safe_remove(p.wrap_path)
 		Fetch.safe_remove(p.err_path)
+		Fetch.safe_remove(p.stage_path)
 		return
 	end
 	if (_pending.last_poll_t or 0) + POLL_INTERVAL_SEC > now then return end
@@ -410,11 +433,14 @@ mod.update = function(dt)
 			local code, err = Fetch.read_diagnostics(p)
 			mod:warning("[fetch] empty html seq=%d curl_exit=%s stderr=%s",
 				p.seq, tostring(code), tostring(err))
+			mod.dbg("[fetch] empty html seq=%d host_stage=%s", p.seq, tostring(Fetch.read_stage(p)))
 		end
 		Fetch.safe_remove(p.html_path)
 		Fetch.safe_remove(p.done_path)
 		Fetch.safe_remove(p.bat_path)
+		Fetch.safe_remove(p.wrap_path)
 		Fetch.safe_remove(p.err_path)
+		Fetch.safe_remove(p.stage_path)
 		on_build_html_ready(html, p.url, p.mode)
 	end
 end

@@ -69,7 +69,7 @@ function M._resolve(selected_widgets, layout_index, class_nodes)
 			mod.dbg("[export] no GL node for widget %s (talent=%s)", tostring(wn), tostring(entry and entry.talent))
 		else
 			local node = best_node(entry, candidates)
-			if node.tree_type == "broker_stimm" then
+			if node.tree_type == "broker_stimm_tree" then
 				ids_stimm[#ids_stimm + 1] = node.uuid
 			else
 				ids_default[#ids_default + 1] = node.uuid
@@ -182,7 +182,6 @@ function M._curio_entry(r, maps)
 			if sub then uuid = u; break end
 		end
 	end
-	if not uuid then local _, any = next(maps.CURIOS); uuid = any end
 	if not uuid then return nil, nk end
 	local trait = (r.stat_keyword and maps.CURIO_TRAITS[r.stat_keyword]) or M.NULL
 	return { id = uuid, quality = r.rarity, trait = trait, modifiers = M._modifiers(r.perk_effects or {}, maps.CURIO_MODIFIERS or {}, 3) }
