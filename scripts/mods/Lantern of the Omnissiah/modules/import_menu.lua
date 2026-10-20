@@ -168,6 +168,8 @@ function M.process(element)
 	state.pending = nil
 	local handlers = state.handlers
 	M.close(element)
+	mod.dbg("[import_menu] action=%s import=%s create=%s", tostring(action),
+		tostring(handlers and handlers.on_import ~= nil), tostring(handlers and handlers.on_create ~= nil))
 	if action == "import" and handlers and handlers.on_import then handlers.on_import()
 	elseif action == "create" and handlers and handlers.on_create then handlers.on_create() end
 end

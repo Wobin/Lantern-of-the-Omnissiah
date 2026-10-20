@@ -583,7 +583,13 @@ mod.on_all_mods_loaded = function()
 	mod:hook(CLASS.ViewElementProfilePresets, "cb_add_new_profile_preset", function(orig, self)
 		mod._modules.import_menu.open(self, {
 			on_import = do_import_or_notify,
-			on_create = function() orig(self) end,
+			on_create = function()
+				local ProfileUtils = require("scripts/utilities/profile_utils")
+				local before = #(ProfileUtils.get_profile_presets() or {})
+				mod.dbg("[create] before=%d can_add=%s", before, tostring(self:can_add_profile_preset()))
+				orig(self)
+				mod.dbg("[create] after=%d", #(ProfileUtils.get_profile_presets() or {}))
+			end,
 		})
 	end)
 
