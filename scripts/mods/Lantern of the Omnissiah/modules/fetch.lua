@@ -4,6 +4,7 @@ local M = {}
 
 local TEMP_DIR = os.getenv("TEMP") or os.getenv("TMP") or "."
 local CURL     = (os.getenv("SystemRoot") or "C:\\Windows") .. "\\System32\\curl.exe"
+local UA       = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 local _seq     = 0
 
 local _is_wine
@@ -71,7 +72,7 @@ local function spawn_build_windows(url)
 	M.safe_remove(err_path)
 	if not write_script(bat_path, {
 		"@echo off",
-		string.format('"%s" -s -S -L -o "%s" "%s" 2> "%s"', CURL, html_path, url, err_path),
+		string.format('"%s" -s -S -L -A "%s" -o "%s" "%s" 2> "%s"', CURL, UA, html_path, url, err_path),
 		string.format('>"%s" echo %%ERRORLEVEL%%', done_path),
 	}) then
 		mod:warning("[fetch] failed to write build script %s", bat_path)
@@ -116,10 +117,10 @@ local function spawn_build_wine(url)
 		"echo sh_begin > \"$stage\"",
 		"if command -v curl >/dev/null 2>&1; then",
 		"  echo curl >> \"$stage\"",
-		string.format("  curl -s -S -L -o \"$out\" '%s' 2> \"$err\"; echo $? > \"$done\"", url),
+		string.format("  curl -s -S -L -A '%s' -o \"$out\" '%s' 2> \"$err\"; echo $? > \"$done\"", UA, url),
 		"elif command -v wget >/dev/null 2>&1; then",
 		"  echo wget >> \"$stage\"",
-		string.format("  wget -q -O \"$out\" '%s' 2> \"$err\"; echo $? > \"$done\"", url),
+		string.format("  wget -q -U '%s' -O \"$out\" '%s' 2> \"$err\"; echo $? > \"$done\"", UA, url),
 		"else",
 		"  echo no_http >> \"$stage\"",
 		"  echo 'no curl or wget on host' > \"$err\"; echo 127 > \"$done\"",
