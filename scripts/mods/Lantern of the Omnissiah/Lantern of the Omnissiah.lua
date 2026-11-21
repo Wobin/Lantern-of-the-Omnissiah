@@ -574,12 +574,6 @@ mod.on_all_mods_loaded = function()
 		end
 	end
 
-	mod:hook(CLASS.ViewElementProfilePresets, "init", function(orig, self, ...)
-		local ret = orig(self, ...)
-		mod._modules.import_menu.install(self)
-		return ret
-	end)
-
 	mod:hook(CLASS.ViewElementProfilePresets, "cb_add_new_profile_preset", function(orig, self)
 		mod._modules.import_menu.open(self, {
 			on_import = do_import_or_notify,
@@ -591,17 +585,6 @@ mod.on_all_mods_loaded = function()
 				mod.dbg("[create] after=%d", #(ProfileUtils.get_profile_presets() or {}))
 			end,
 		})
-	end)
-
-	mod:hook(CLASS.ViewElementProfilePresets, "update", function(orig, self, ...)
-		local ret = orig(self, ...)
-		mod._modules.import_menu.process(self)
-		return ret
-	end)
-
-	mod:hook(CLASS.ViewElementProfilePresets, "draw", function(orig, self, dt, t, ui_renderer, ...)
-		mod._modules.import_menu.measure(self, ui_renderer)
-		return orig(self, dt, t, ui_renderer, ...)
 	end)
 
 	mod:hook(CLASS.InventoryView, "_setup_individual_layout", function(orig, self, layout)
